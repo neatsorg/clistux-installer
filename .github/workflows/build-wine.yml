@@ -1,0 +1,54 @@
+# パッチ入りの Wine をビルドして、GitHub Releases の wine-<版>-csp<リビジョン> に置く。
+# GitHub の画面(Actions → Build Wine → Run workflow)から手で起動する。数時間かかることがある。
+# LGPL-2.1-or-later に従い、公式のソースとパッチ・ビルドの方法も同じリリースに添付する。
+name: Build Wine
+
+on:
+  workflow_dispatch:
+    inputs:
+      wine_version:
+        description: Wine の版
+        default: "11.4"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 空き容量を増やす
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - name: ビルド
+        run: wine/build.sh "${{ inputs.wine_version }}"
+
+      - name: リリースに置く
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver="${{ inputs.wine_version }}"
+          rev="$(cat wine/REVISION)"
+          tag="wine-$ver-csp$rev"
+          name="wine-$ver-csp$rev-x86_64"
+          dist="$HOME/.cache/clistux/dist"
+          # パッチとビルドの方法(LGPL のソースの一部)
+          tar --sort=name --owner=0 --group=0 --numeric-owner -cJf "$dist/$tag-patches.tar.xz" \
+              wine/patches wine/build.sh wine/build-unix.sh wine/inputs.sh wine/REVISION wine/COPYING.LIB \
+              integration/wv2check
+          (cd "$dist" && sha256sum "$name.tar.xz" "wine-$ver.tar.xz" "$tag-patches.tar.xz" > SHA256SUMS)
+          if gh release view "$tag" > /dev/null 2>&1; then
+              echo "::error::$tag はもうあります。リビジョン(wine/REVISION)を上げてください"; exit 1
+          fi
+          gh release create "$tag" --title "Wine $ver(csp$rev)" --latest=false \
+              --notes "Clistux Installer が使う、パッチ入りの Wine $ver。ソース(wine-$ver.tar.xz)とパッチ($tag-patches.tar.xz)を添付しています(LGPL-2.1-or-later)。" \
+              "$dist/$name.tar.xz" "$dist/$name.tar.xz.sha256" "$dist/wine-$ver.tar.xz" "$dist/$tag-patches.tar.xz" "$dist/SHA256SUMS"
+          echo "data/wine-release に書く値:"
+          echo "WINE_NAME=$name"
+          echo "WINE_URL=https://github.com/${{ github.repository }}/releases/download/$tag/$name.tar.xz"
+          echo "WINE_SHA256=$(cut -d' ' -f1 "$dist/$name.tar.xz.sha256")"

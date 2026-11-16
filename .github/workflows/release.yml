@@ -1,0 +1,39 @@
+# ツールのリリース。v<版> のタグを push すると動く(例: git tag v0.1.0 && git push origin v0.1.0)。
+# data/VERSION とタグが一致し、data/wine-release の Wine がリリースに置かれていることを確かめてから公開する。
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          [[ "v$(cat data/VERSION)" == "$tag" ]] || { echo "::error::タグ($tag)と data/VERSION($(cat data/VERSION))が違います"; exit 1; }
+          for f in clistux install.sh lib/*.sh integration/*.sh integration/workarea/*.sh scripts/*.sh wine/*.sh; do bash -n "$f"; done
+          url="$(sed -n 's/^WINE_URL=//p' data/wine-release)"
+          sum="$(sed -n 's/^WINE_SHA256=//p' data/wine-release)"
+          wtag="$(basename "$(dirname "$url")")"
+          gh release download "$wtag" --pattern "$(basename "$url").sha256" --output - | grep -q "^$sum " \
+              || { echo "::error::data/wine-release の Wine($wtag)が見つからないか、チェックサムが違います"; exit 1; }
+
+      - name: ファイルを作って公開する
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          scripts/make-release.sh dist/release
+          gh release create "${GITHUB_REF_NAME}" --title "Clistux Installer ${GITHUB_REF_NAME}" --latest --generate-notes \
+              dist/release/install.sh dist/release/clistux.tar.gz dist/release/release.json
