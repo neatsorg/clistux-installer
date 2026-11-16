@@ -31,7 +31,10 @@ json_get() { sed -n "s/.*\"$1\": *\"\\([^\"]*\\)\".*/\\1/p" "$2" | head -1; }
 
 # 新しい版のツールがあれば取得して確かめ、新しいツールで同じコマンドを続ける。無ければ何もしない。
 self_update() {
-    [[ -n "${CLISTUX_SELF_UPDATED:-}" ]] && return 0
+    if [[ -n "${CLISTUX_SELF_UPDATED:-}" ]]; then
+        ok "このツールを $(tool_version) にしました"
+        return 0
+    fi
     local tmp json ver url sum
     tmp="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/clistux-update.XXXXXX")"
     json="$tmp/release.json"
