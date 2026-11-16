@@ -7,6 +7,7 @@
 #   clistux update       このインストーラの Wine と設定を新しくする
 #   clistux repair       設定・起動スクリプト・アプリのメニューを入れ直す
 #   clistux tabmate      CLIP STUDIO TABMATE を使えるようにする
+#   clistux migrate      ほかの方法で入れた CSP から設定・素材を引き継ぐ(--from で場所を指定)
 #   clistux webview2     Web の画面に使う部品(WebView2)を最新にする(--previous で前の版に戻す)
 #   clistux doctor       うまく動かないときの診断
 #   clistux stop         取り残された Wine を止める
@@ -28,11 +29,13 @@ fi
 OPT_CSP_INSTALLER=""
 OPT_WINE_ARCHIVE=""
 OPT_PREVIOUS=""
+OPT_FROM=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --csp-installer) OPT_CSP_INSTALLER="$(readlink -f "${2:?ファイルを指定してください}")"; shift 2 ;;
         --wine-archive) OPT_WINE_ARCHIVE="$(readlink -f "${2:?ファイルを指定してください}")"; shift 2 ;;
         --previous) OPT_PREVIOUS=1; shift ;;
+        --from) OPT_FROM="$(readlink -f "${2:?場所を指定してください}")"; shift 2 ;;
         *) echo "知らないオプションです: $1" >&2; exit 2 ;;
     esac
 done
@@ -47,7 +50,7 @@ if [[ -z "${CLISTUX_RELOCATED:-}" && "$CLISTUX_COMMAND" =~ ^(menu|install|update
 fi
 [[ -n "${CLISTUX_RELOCATED:-}" ]] && trap 'rm -rf "$CLISTUX_RELOCATED"' EXIT
 
-for f in common check wine prefix csp webview2 desktop tabmate doctor; do
+for f in common check wine prefix csp webview2 desktop tabmate doctor migrate; do
     # shellcheck source=/dev/null
     . "$CLISTUX_ROOT/lib/$f.sh"
 done
@@ -59,7 +62,7 @@ require_idle() {
 }
 
 cmd_install() {
-    STEPS=8
+    STEPS=9
     printf '%sCLIP STUDIO PAINT を Linux で使えるようにします。%s\n' "$C_B" "$C_0"
     info "途中で CSP のインストーラの画面が開きます。全体で 5〜15 分ほどかかります。"
     info "記録: $LOG"
@@ -90,6 +93,13 @@ cmd_install() {
         ok "CSP は入っています($(csp_version))。新しい版にするには「$(basename "$0") update-csp」"
     fi
     check_tested_version
+
+    step "ほかの方法で入れた CSP からの引き継ぎ"
+    if [[ -n "$installer" ]]; then
+        cmd_migrate 1
+    else
+        info "CSP は導入済みなので、ここでは引き継ぎません(引き継ぐには「$(basename "$0") migrate」)。"
+    fi
 
     step "Web の画面に使う部品(WebView2)を準備しています"
     update_webview2
@@ -205,7 +215,7 @@ cmd_menu() {
         return
     fi
     if [[ ! -t 0 ]]; then
-        sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
         return
     fi
     printf '%sCLIP STUDIO PAINT(%s)は導入済みです。何をしますか?%s\n' "$C_B" "$(csp_version 2>/dev/null || echo 版は不明)" "$C_0"
@@ -213,7 +223,8 @@ cmd_menu() {
     printf '  2. うまく動かないときの診断と修復\n'
     printf '  3. このツールと部品(Wine・WebView2)を新しくする\n'
     printf '  4. CLIP STUDIO TABMATE を使えるようにする\n'
-    printf '  5. 削除する\n'
+    printf '  5. ほかの方法で入れた CSP から、設定・素材を引き継ぐ\n'
+    printf '  6. 削除する\n'
     printf '  0. 何もしないで終わる\n'
     local choice
     read -r -p "  番号を入力して Enter キーを押してください: " choice
@@ -222,7 +233,8 @@ cmd_menu() {
         2) doctor; echo; confirm "設定・起動スクリプト・アプリのメニューを入れ直しますか? " && cmd_repair ;;
         3) cmd_update ;;
         4) setup_tabmate ;;
-        5) cmd_uninstall ;;
+        5) cmd_migrate ;;
+        6) cmd_uninstall ;;
         *) info "何もしないで終わります。" ;;
     esac
 }
@@ -240,6 +252,7 @@ case "$CLISTUX_COMMAND" in
     doctor) doctor ;;
     stop) cmd_stop ;;
     uninstall) cmd_uninstall ;;
-    help|-h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    migrate) cmd_migrate ;;
+    help|-h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) echo "知らないコマンドです: $CLISTUX_COMMAND(「$(basename "$0") help」で一覧)" >&2; exit 2 ;;
 esac
