@@ -83,6 +83,11 @@ grep -q '^PE_ARCHS = *i386 x86_64' Makefile || { echo "PE のビルドが有効�
 grep -q '^x86_64_CC = *x86_64-w64-mingw32-gcc' Makefile || { echo "mingw の GCC が使われていません" >&2; grep '^x86_64_CC' Makefile >&2; exit 1; }
 make -j"$(nproc)" > make.log 2>&1 || { grep -E 'error' make.log | tail -30; exit 1; }
 make install-lib DESTDIR=/tmp/stage > install.log 2>&1 || { tail -30 install.log; exit 1; }
+# デバッグ用の情報を取り除く(配布ファイルを小さくする。動作に要る部分は残る)
+find /tmp/stage/usr/lib/wine/x86_64-windows -type f \( -name '*.dll' -o -name '*.exe' -o -name '*.drv' -o -name '*.sys' -o -name '*.ocx' -o -name '*.cpl' -o -name '*.acm' -o -name '*.ax' -o -name '*.tlb' -o -name '*.ds' \) \
+    -exec x86_64-w64-mingw32-strip --strip-debug {} + 2> /dev/null || true
+find /tmp/stage/usr/lib/wine/i386-windows -type f \( -name '*.dll' -o -name '*.exe' -o -name '*.drv' -o -name '*.sys' -o -name '*.ocx' -o -name '*.cpl' -o -name '*.acm' -o -name '*.ax' -o -name '*.tlb' -o -name '*.ds' \) \
+    -exec i686-w64-mingw32-strip --strip-debug {} + 2> /dev/null || true
 cp -a /tmp/stage/usr/lib/wine/x86_64-windows /tmp/stage/usr/lib/wine/i386-windows /out/
 echo "PE: $(ls /out/x86_64-windows | wc -l) + $(ls /out/i386-windows | wc -l) 個"
 PEBUILD
