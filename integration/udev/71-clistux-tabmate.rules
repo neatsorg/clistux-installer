@@ -1,0 +1,5 @@
+# clistux: CLIP STUDIO TABMATE(Bluetooth、0A5C:8502)の hidraw だけを、ログイン中の利用者が読み書きできるようにする。
+# Wine(winebus)が TABMATE を hidraw のまま CSP に渡し、CSP 自身の TABMATE の機能で使うため。
+# ほかの hidraw(マウス・キーボードなど)は、今までどおり root だけが読み書きできる。
+# uaccess は 73-seat-late.rules で処理されるので、73 より前の番号にしておく。
+ACTION=="add|change", SUBSYSTEM=="hidraw", KERNELS=="0005:0A5C:8502.*", TAG+="uaccess"

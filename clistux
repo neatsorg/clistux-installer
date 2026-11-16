@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# Clistux Installer: CLIP STUDIO PAINT を Linux で使うための環境を作る。
+#
+#   clistux              まだ入っていなければ導入する。入っていれば、することを番号で選ぶ
+#   clistux install      はじめての導入(Wine、CSP 専用の環境、CSP 本体、アプリのメニュー)
+#   clistux update-csp   CSP を新しい版にする(新しい公式インストーラを実行し、設定を入れ直す)
+#   clistux update       このインストーラの Wine と設定を新しくする
+#   clistux repair       設定・起動スクリプト・アプリのメニューを入れ直す
+#   clistux tabmate      CLIP STUDIO TABMATE を使えるようにする
+#   clistux webview2     Web の画面に使う部品(WebView2)を最新にする(--previous で前の版に戻す)
+#   clistux doctor       うまく動かないときの診断
+#   clistux stop         取り残された Wine を止める
+#   clistux uninstall    このインストーラが置いたものを消す
+#
+# オプション:
+#   --csp-installer ファイル   CSP のインストーラ(既定: 「ダウンロード」フォルダーの最新のもの)
+#   --wine-archive ファイル    Wine の配布ファイル(公開前の試験用)
+set -euo pipefail
+
+CLISTUX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+if [[ $# -gt 0 && "$1" != -* ]]; then
+    CLISTUX_COMMAND="$1"; shift
+else
+    CLISTUX_COMMAND=menu
+fi
+
+OPT_CSP_INSTALLER=""
+OPT_WINE_ARCHIVE=""
+OPT_PREVIOUS=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --csp-installer) OPT_CSP_INSTALLER="$(readlink -f "${2:?ファイルを指定してください}")"; shift 2 ;;
+        --wine-archive) OPT_WINE_ARCHIVE="$(readlink -f "${2:?ファイルを指定してください}")"; shift 2 ;;
+        --previous) OPT_PREVIOUS=1; shift ;;
+        *) echo "知らないオプションです: $1" >&2; exit 2 ;;
+    esac
+done
+
+# 導入したこのツール自身を書き換える・消すコマンドは、一時的な場所に写したものから実行し直す
+# (bash は実行しながらスクリプトを読むので、実行中に書き換えると壊れる)
+if [[ -z "${CLISTUX_RELOCATED:-}" && "$CLISTUX_COMMAND" =~ ^(menu|install|update|uninstall)$ \
+      && "$CLISTUX_ROOT" == "${CLISTUX_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/clistux}/tool" ]]; then
+    tmp="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/clistux.XXXXXX")"
+    cp -r "$CLISTUX_ROOT/." "$tmp/"
+    CLISTUX_RELOCATED="$tmp" exec "$tmp/clistux" "$CLISTUX_COMMAND" "$@"
+fi
+[[ -n "${CLISTUX_RELOCATED:-}" ]] && trap 'rm -rf "$CLISTUX_RELOCATED"' EXIT
+
+for f in common check wine prefix csp webview2 desktop tabmate doctor; do
+    # shellcheck source=/dev/null
+    . "$CLISTUX_ROOT/lib/$f.sh"
+done
+
+require_idle() {
+    if prefix_busy; then
+        die "CLIP STUDIO PAINT か CLIP STUDIO が動いています。" "保存して閉じてから、もう一度実行してください。"
+    fi
+}
+
+cmd_install() {
+    STEPS=8
+    printf '%sCLIP STUDIO PAINT を Linux で使えるようにします。%s\n' "$C_B" "$C_0"
+    info "途中で CSP のインストーラの画面が開きます。全体で 5〜15 分ほどかかります。"
+    info "記録: $LOG"
+
+    step "この PC で使えるかを確かめています"
+    check_requirements
+    local installer=""
+    if [[ -z "$(csp_exe paint 2>/dev/null)" ]]; then
+        installer="$(find_csp_installer)"
+        [[ -n "$installer" ]] || ask_for_csp_installer
+    fi
+
+    step "Wine(Windows のソフトを動かす仕組み)を準備しています"
+    install_wine
+
+    step "CSP 専用の環境を作っています"
+    require_idle
+    create_prefix
+
+    step "CSP 用の設定を入れています"
+    apply_settings
+
+    step "CLIP STUDIO PAINT を入れています"
+    if [[ -n "$installer" ]]; then
+        run_csp_installer "$installer"
+        apply_settings   # インストーラが変えた設定があっても、こちらの値に戻す
+    else
+        ok "CSP は入っています($(csp_version))。新しい版にするには「$(basename "$0") update-csp」"
+    fi
+    check_tested_version
+
+    step "Web の画面に使う部品(WebView2)を準備しています"
+    update_webview2
+
+    step "アプリのメニューに登録しています"
+    install_launcher
+    install_desktop
+    install_self
+
+    step "日本語入力と CLIP STUDIO TABMATE"
+    check_input_method
+    if confirm "CLIP STUDIO TABMATE を使いますか?"; then
+        setup_tabmate
+    else
+        info "TABMATE を使うときは、あとで「$(basename "$0") tabmate」を実行してください。"
+    fi
+
+    printf '\n%s完了しました。%s アプリのメニューから「CLIP STUDIO PAINT」を起動してください。\n' "$C_G" "$C_0"
+    info "はじめて起動したときは、CLIP STUDIO のアカウントでのログインを求められます。"
+    info "ペンタブレットの位置がずれるときは、CSP の「ファイル」→「環境設定」→「タブレット」で「マウスモード」を選んでください。"
+    info "はじめての起動で筆圧の調整の画面が出ます。マウスモードでうまく描けないときは、とばしてかまいません(あとで「ファイル」→「筆圧検知レベルの調節」からやり直せます)。"
+}
+
+cmd_update_csp() {
+    STEPS=3
+    require_idle
+    local installer
+    installer="$(find_csp_installer)"
+    step "CSP を新しい版にしています"
+    [[ -x "$WINE_DIR/bin/wine" ]] || die "まだ導入されていません。「$(basename "$0") install」を実行してください。"
+    info "今の版: $(csp_version 2>/dev/null || echo 不明)"
+    run_csp_installer "$installer"
+    step "CSP 用の設定を入れ直しています"
+    apply_settings
+    check_tested_version
+    webview2_status || true
+    step "アプリのメニューを更新しています"
+    install_desktop
+    printf '\n%s完了しました。%s\n' "$C_G" "$C_0"
+}
+
+cmd_update() {
+    STEPS=5
+    require_idle
+    step "Wine を新しくしています"
+    install_wine
+    step "CSP 専用の環境を新しくしています"
+    create_prefix
+    step "CSP 用の設定を入れ直しています"
+    apply_settings
+    step "Web の画面に使う部品(WebView2)を新しくしています"
+    update_webview2
+    step "起動スクリプトとアプリのメニューを新しくしています"
+    install_launcher
+    install_desktop
+    install_self
+    prune_old_wine
+    printf '\n%s完了しました。%s\n' "$C_G" "$C_0"
+}
+
+cmd_repair() {
+    STEPS=2
+    require_idle
+    step "CSP 用の設定を入れ直しています"
+    apply_settings
+    step "起動スクリプトとアプリのメニューを入れ直しています"
+    install_launcher
+    install_desktop
+    install_self
+    printf '\n%s完了しました。%s\n' "$C_G" "$C_0"
+}
+
+cmd_stop() {
+    if pgrep -u "$(id -u)" -f 'CLIPStudio[A-Za-z]*\.exe' >/dev/null; then
+        info "CLIP STUDIO PAINT か CLIP STUDIO が動いています。保存していない作品は失われます。"
+        confirm "止めますか?" || exit 0
+    fi
+    [[ -x "$WINE_DIR/bin/wineserver" ]] && wineserver -k 2>/dev/null || true
+    ok "止めました"
+}
+
+cmd_uninstall() {
+    require_idle
+    info "過去にこのインストーラで導入した次の内容を削除します:"
+    info "  アプリのメニュー登録、起動用スクリプト、Wine($CLISTUX_DATA)"
+    confirm "続けますか? " || exit 0
+    remove_desktop
+    remove_self
+    rm -rf "$BIN_DIR" "$CLISTUX_DATA"/wine-*-csp*-x86_64 "$WINE_DIR"
+    ok "起動スクリプトと Wine を消しました"
+    if [[ -d "$PREFIX" ]]; then
+        warn "CSP 専用の環境($PREFIX)には、CSP 本体と、CSP の設定、素材、"
+        warn "そして「ドキュメント」フォルダーに、保存した作品が入っている場合があります。"
+        if confirm "これらも消しますか?（元に戻せません）"; then
+            rm -rf "$PREFIX" "$WV2_STATE" && ok "CSP 専用の環境を消しました"   # WebView2 はプレフィックスの中にある
+        else
+            info "残しました: $PREFIX"
+        fi
+    fi
+    remove_tabmate
+}
+
+# まだ入っていなければ導入。入っていれば、することを番号で選んでもらう(Windows のインストーラの「変更・修復・削除」と同じ考え方)
+cmd_menu() {
+    if [[ ! -x "$WINE_DIR/bin/wine" || -z "$(csp_exe paint 2>/dev/null)" ]]; then
+        cmd_install
+        return
+    fi
+    if [[ ! -t 0 ]]; then
+        sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'
+        return
+    fi
+    printf '%sCLIP STUDIO PAINT(%s)は導入済みです。何をしますか?%s\n' "$C_B" "$(csp_version 2>/dev/null || echo 版は不明)" "$C_0"
+    printf '  1. CLIP STUDIO PAINT を新しい版にする(公式サイトから新しいインストーラをダウンロードしてから)\n'
+    printf '  2. うまく動かないときの診断と修復\n'
+    printf '  3. このツールと部品(Wine・WebView2)を新しくする\n'
+    printf '  4. CLIP STUDIO TABMATE を使えるようにする\n'
+    printf '  5. 削除する\n'
+    printf '  0. 何もしないで終わる\n'
+    local choice
+    read -r -p "  番号を入力して Enter キーを押してください: " choice
+    case "$choice" in
+        1) cmd_update_csp ;;
+        2) doctor; echo; confirm "設定・起動スクリプト・アプリのメニューを入れ直しますか? " && cmd_repair ;;
+        3) cmd_update ;;
+        4) setup_tabmate ;;
+        5) cmd_uninstall ;;
+        *) info "何もしないで終わります。" ;;
+    esac
+}
+
+case "$CLISTUX_COMMAND" in
+    menu) cmd_menu ;;
+    install) cmd_install ;;
+    update-csp) cmd_update_csp ;;
+    update) cmd_update ;;
+    repair) cmd_repair ;;
+    tabmate) setup_tabmate ;;
+    webview2)
+        require_idle
+        if [[ -n "$OPT_PREVIOUS" ]]; then webview2_previous; else update_webview2; fi ;;
+    doctor) doctor ;;
+    stop) cmd_stop ;;
+    uninstall) cmd_uninstall ;;
+    help|-h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "知らないコマンドです: $CLISTUX_COMMAND(「$(basename "$0") help」で一覧)" >&2; exit 2 ;;
+esac

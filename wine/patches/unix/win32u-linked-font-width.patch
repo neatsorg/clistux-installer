@@ -1,0 +1,92 @@
+diff --git a/dlls/win32u/font.c b/dlls/win32u/font.c
+index e34cb13..fed0e89 100644
+--- a/dlls/win32u/font.c
++++ b/dlls/win32u/font.c
+@@ -4107,17 +4107,29 @@ static DWORD font_GetKerningPairs( PHYSDEV dev, DWORD count, KERNINGPAIR *pairs
+ }
+ 
+ 
++/* Horizontal scale of a font with a requested average width. */
++double get_font_width_ratio( const struct gdi_font *font )
++{
++    if (!font->aveWidth || !font->otm.otmTextMetrics.tmAveCharWidth)
++        return font->scale_y;
++    return (double)font->aveWidth / (double)font->otm.otmTextMetrics.tmAveCharWidth;
++}
++
++/* A linked font keeps the aspect ratio of its base font (see freetype_get_glyph_outline). */
++static double get_linked_font_width_ratio( const struct gdi_font *font )
++{
++    const struct gdi_font *base = font->base_font;
++
++    if (font->aveWidth && base && base->otm.otmTextMetrics.tmAveCharWidth)
++        return font->scale_y * get_font_width_ratio( base ) / base->scale_y;
++    return get_font_width_ratio( font );
++}
++
+ static void scale_outline_font_metrics( const struct gdi_font *font, OUTLINETEXTMETRICW *otm )
+ {
+     double scale_x, scale_y;
+ 
+-    if (font->aveWidth)
+-    {
+-        scale_x = (double)font->aveWidth;
+-        scale_x /= (double)font->otm.otmTextMetrics.tmAveCharWidth;
+-    }
+-    else
+-        scale_x = font->scale_y;
++    scale_x = get_linked_font_width_ratio( font );
+ 
+     scale_x *= fabs(font->matrix.eM11);
+     scale_y = font->scale_y * fabs(font->matrix.eM22);
+@@ -4326,13 +4338,7 @@ static void scale_font_metrics( struct gdi_font *font, TEXTMETRICW *tm )
+         font->aveWidth = 0;
+     }
+ 
+-    if (font->aveWidth)
+-    {
+-        scale_x = (double)font->aveWidth;
+-        scale_x /= (double)font->otm.otmTextMetrics.tmAveCharWidth;
+-    }
+-    else
+-        scale_x = font->scale_y;
++    scale_x = get_linked_font_width_ratio( font );
+ 
+     scale_x *= fabs(font->matrix.eM11);
+     scale_y = font->scale_y * fabs(font->matrix.eM22);
+diff --git a/dlls/win32u/freetype.c b/dlls/win32u/freetype.c
+index a660b16..8a3737a 100644
+--- a/dlls/win32u/freetype.c
++++ b/dlls/win32u/freetype.c
+@@ -2262,7 +2262,16 @@ static FT_Matrix *get_transform_matrices( struct gdi_font *font, BOOL vertical,
+     matrices[matrix_unrotated] = identity_mat;
+ 
+     /* Scaling factor */
+-    if (font->aveWidth)
++    if (font->aveWidth && font->base_font)
++    {
++        /* A linked font keeps the aspect ratio of its base font. Scaling it to the requested
++         * average width on its own squeezes fonts whose average width includes ideographs. */
++        struct gdi_font *base = font->base_font;
++
++        if (!freetype_set_outline_text_metrics( base )) freetype_set_bitmap_text_metrics( base );
++        width_ratio = font->scale_y * get_font_width_ratio( base ) / base->scale_y;
++    }
++    else if (font->aveWidth)
+     {
+         if (!freetype_set_outline_text_metrics( font )) freetype_set_bitmap_text_metrics( font );
+         width_ratio = (double)font->aveWidth;
+diff --git a/dlls/win32u/ntgdi_private.h b/dlls/win32u/ntgdi_private.h
+index fcfbce5..2be2f89 100644
+--- a/dlls/win32u/ntgdi_private.h
++++ b/dlls/win32u/ntgdi_private.h
+@@ -298,6 +298,9 @@ struct gdi_font
+     WCHAR                  file[1];
+ };
+ 
++extern double get_font_width_ratio( const struct gdi_font *font );
++
++
+ #define MS_MAKE_TAG(ch1,ch2,ch3,ch4) \
+     (((DWORD)ch4 << 24) | ((DWORD)ch3 << 16) | ((DWORD)ch2 << 8) | (DWORD)ch1)
+ 

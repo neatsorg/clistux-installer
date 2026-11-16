@@ -1,0 +1,117 @@
+From 67586ef48f39a368ff6d04aa1f55752b3b22abb2 Mon Sep 17 00:00:00 2001
+From: neatsorg <neatsorg@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 13:39:52 +0900
+Subject: [PATCH 3/6] dxgi: Copy composition swapchains to their window through
+ GDI on Present.
+
+Presenting a wined3d swapchain into the composed window did not show anything.
+Make composition swapchains GDI compatible, remember the window dcomp composes
+them into, and copy the back buffer there with BitBlt before presenting.
+---
+ dlls/dxgi/dxgi_private.h |  3 +++
+ dlls/dxgi/factory.c      |  8 +++++++-
+ dlls/dxgi/swapchain.c    | 41 ++++++++++++++++++++++++++++++++++++----
+ 3 files changed, 47 insertions(+), 5 deletions(-)
+
+diff --git a/dlls/dxgi/dxgi_private.h b/dlls/dxgi/dxgi_private.h
+index 3dd11d2..1682f8b 100644
+--- a/dlls/dxgi/dxgi_private.h
++++ b/dlls/dxgi/dxgi_private.h
+@@ -183,6 +183,9 @@ struct d3d11_swapchain
+     IDXGIOutput *target;
+     LONG present_count;
+     LONG in_set_fullscreen_state;
++
++    /* Window a composition swapchain is composed into (set by dcomp), or NULL. */
++    HWND composition_window;
+ };
+ 
+ /* Private data GUID used by dcomp to tell a composition swapchain which window to present to.
+diff --git a/dlls/dxgi/factory.c b/dlls/dxgi/factory.c
+index 8562be6..16d30c7 100644
+--- a/dlls/dxgi/factory.c
++++ b/dlls/dxgi/factory.c
+@@ -419,7 +419,13 @@ static HRESULT STDMETHODCALLTYPE dxgi_factory_CreateSwapChainForComposition(IWin
+         return E_FAIL;
+     }
+ 
+-    hr = IWineDXGIFactory_CreateSwapChainForHwnd(iface, device, window, desc, NULL, output, swapchain);
++    {
++        /* dxgi copies a composition swapchain to its window through GDI (see d3d11_swapchain_present). */
++        DXGI_SWAP_CHAIN_DESC1 composition_desc = *desc;
++
++        composition_desc.Flags |= DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE;
++        hr = IWineDXGIFactory_CreateSwapChainForHwnd(iface, device, window, &composition_desc, NULL, output, swapchain);
++    }
+     if (FAILED(hr))
+     {
+         WARN("Failed to create a composition swapchain, hr %#lx.\n", hr);
+diff --git a/dlls/dxgi/swapchain.c b/dlls/dxgi/swapchain.c
+index 39c5e16..4acd3cc 100644
+--- a/dlls/dxgi/swapchain.c
++++ b/dlls/dxgi/swapchain.c
+@@ -260,10 +260,8 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_SetPrivateData(IDXGISwapChain4
+     {
+         HWND window = *(const HWND *)data;
+ 
+-        TRACE("Presenting composition swapchain %p to window %p.\n", iface, window);
+-        wined3d_mutex_lock();
+-        wined3d_swapchain_set_window(swapchain->wined3d_swapchain, window);
+-        wined3d_mutex_unlock();
++        TRACE("Composition swapchain %p is composed into window %p.\n", iface, window);
++        swapchain->composition_window = window;
+         return S_OK;
+     }
+ 
+@@ -312,6 +310,38 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_GetDevice(IDXGISwapChain4 *ifac
+ 
+ /* IDXGISwapChain1 methods */
+ 
++/* Composition swapchains are GDI compatible; copy the back buffer to the window they are composed
++ * into. This approximates DirectComposition for a swapchain that fills its window. */
++static void d3d11_swapchain_blit_to_composition_window(struct d3d11_swapchain *swapchain)
++{
++    struct wined3d_resource_desc desc;
++    struct wined3d_texture *texture;
++    HDC src_dc, dst_dc;
++    HRESULT hr;
++
++    wined3d_mutex_lock();
++    if (!(texture = wined3d_swapchain_get_back_buffer(swapchain->wined3d_swapchain, 0)))
++    {
++        wined3d_mutex_unlock();
++        return;
++    }
++    wined3d_resource_get_desc(wined3d_texture_get_resource(texture), &desc);
++    if (FAILED(hr = wined3d_texture_get_dc(texture, 0, &src_dc)))
++    {
++        wined3d_mutex_unlock();
++        WARN("Failed to get a DC for the back buffer, hr %#lx.\n", hr);
++        return;
++    }
++    if ((dst_dc = GetDC(swapchain->composition_window)))
++    {
++        BitBlt(dst_dc, 0, 0, desc.width, desc.height, src_dc, 0, 0, SRCCOPY);
++        ReleaseDC(swapchain->composition_window, dst_dc);
++    }
++    wined3d_texture_release_dc(texture, 0, src_dc);
++    wined3d_mutex_unlock();
++    TRACE("Copied %ux%u to window %p.\n", desc.width, desc.height, swapchain->composition_window);
++}
++
+ static HRESULT d3d11_swapchain_present(struct d3d11_swapchain *swapchain,
+         unsigned int sync_interval, unsigned int flags)
+ {
+@@ -334,6 +364,9 @@ static HRESULT d3d11_swapchain_present(struct d3d11_swapchain *swapchain,
+         return S_OK;
+     }
+ 
++    if (swapchain->composition_window)
++        d3d11_swapchain_blit_to_composition_window(swapchain);
++
+     if (SUCCEEDED(hr = wined3d_swapchain_present(swapchain->wined3d_swapchain, NULL, NULL, NULL, sync_interval, 0)))
+         InterlockedIncrement(&swapchain->present_count);
+     return hr;
+-- 
+2.56.1
+

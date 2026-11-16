@@ -1,0 +1,570 @@
+From 6e89ca0e539fbe7dffb2cc97d8154ab113bbc217 Mon Sep 17 00:00:00 2001
+From: neatsorg <neatsorg@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 14:06:29 +0900
+Subject: [PATCH 5/6] windows.ui, windows.storage: Add RadialController and
+ StorageFile activation factory stubs.
+
+CLIP STUDIO PAINT gets the RadialController, RadialControllerMenuItem,
+RadialControllerConfiguration and StorageFile factories up front and crashes
+when one is missing. IRadialControllerStatics::IsSupported reports FALSE and
+every other method returns E_NOTIMPL. The classes still need to be registered
+under ActivatableClassId (DllPath) in the prefix.
+---
+ dlls/windows.storage/Makefile.in   |   1 +
+ dlls/windows.storage/main.c        |   3 +
+ dlls/windows.storage/private.h     |   2 +
+ dlls/windows.storage/storagefile.c | 197 ++++++++++++++++++++++
+ dlls/windows.ui/Makefile.in        |   1 +
+ dlls/windows.ui/main.c             |   3 +
+ dlls/windows.ui/private.h          |   2 +
+ dlls/windows.ui/radialcontroller.c | 262 +++++++++++++++++++++++++++++
+ 8 files changed, 471 insertions(+)
+ create mode 100644 dlls/windows.storage/storagefile.c
+ create mode 100644 dlls/windows.ui/radialcontroller.c
+
+diff --git a/dlls/windows.storage/Makefile.in b/dlls/windows.storage/Makefile.in
+index bb446a2..52c2d7f 100644
+--- a/dlls/windows.storage/Makefile.in
++++ b/dlls/windows.storage/Makefile.in
+@@ -4,4 +4,5 @@ IMPORTS = shell32 combase
+ SOURCES = \
+ 	classes.idl \
+ 	main.c \
++	storagefile.c \
+ 	streams.c
+diff --git a/dlls/windows.storage/main.c b/dlls/windows.storage/main.c
+index 390f2de..0a434ed 100644
+--- a/dlls/windows.storage/main.c
++++ b/dlls/windows.storage/main.c
+@@ -39,6 +39,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
+     if (!wcscmp( buffer, RuntimeClass_Windows_Storage_Streams_RandomAccessStreamReference ))
+         IActivationFactory_QueryInterface( random_access_stream_reference_factory, &IID_IActivationFactory, (void **)factory );
+ 
++    if (!wcscmp( buffer, L"Windows.Storage.StorageFile" ))
++        IActivationFactory_QueryInterface( storage_file_factory_stub, &IID_IActivationFactory, (void **)factory );
++
+     if (*factory) return S_OK;
+     return CLASS_E_CLASSNOTAVAILABLE;
+ }
+diff --git a/dlls/windows.storage/private.h b/dlls/windows.storage/private.h
+index 62c9d22..45a2e77 100644
+--- a/dlls/windows.storage/private.h
++++ b/dlls/windows.storage/private.h
+@@ -79,4 +79,6 @@ extern IActivationFactory *random_access_stream_reference_factory;
+ #define DEFINE_IINSPECTABLE( pfx, iface_type, impl_type, base_iface )                              \
+     DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from_##iface_type, iface_type##_iface, &impl->base_iface )
+ 
++extern IActivationFactory *storage_file_factory_stub;
++
+ #endif
+diff --git a/dlls/windows.storage/storagefile.c b/dlls/windows.storage/storagefile.c
+new file mode 100644
+index 0000000..74a46ab
+--- /dev/null
++++ b/dlls/windows.storage/storagefile.c
+@@ -0,0 +1,197 @@
++/* WinRT Windows.Storage.StorageFile stub
++ *
++ * Copyright 2026 clistux contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++/*
++ * StorageFile is not implemented. Some applications (CLIP STUDIO PAINT, for menu icons of wheel devices)
++ * get the activation factory up front and crash when it is missing, but handle failing methods.
++ * This factory exists so that they can start: every IStorageFileStatics method returns E_NOTIMPL.
++ */
++
++#include "private.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(storage);
++
++static const GUID IID_IStorageFileStatics_stub =
++        {0x5984c710, 0xdaf2, 0x43c8, {0x8b, 0xb4, 0xa4, 0xd3, 0xea, 0xcf, 0xd0, 0x3f}};
++
++/* A statics/interop interface whose methods after IInspectable are stubs. */
++struct stub_interface
++{
++    const void *vtbl;
++    struct stub_factory *factory;
++    const GUID *iid;
++};
++
++struct stub_factory
++{
++    IActivationFactory IActivationFactory_iface;
++    const WCHAR *class_name;
++    struct stub_interface interfaces[1];
++};
++
++#define STUB_METHODS 8
++
++static HRESULT WINAPI stub_method( void )
++{
++    return E_NOTIMPL;
++}
++
++static inline struct stub_factory *impl_from_IActivationFactory( IActivationFactory *iface )
++{
++    return CONTAINING_RECORD( iface, struct stub_factory, IActivationFactory_iface );
++}
++
++static HRESULT factory_query_interface( struct stub_factory *factory, REFIID iid, void **out )
++{
++    unsigned int i;
++
++    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable )
++            || IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IActivationFactory ))
++    {
++        *out = &factory->IActivationFactory_iface;
++        return S_OK;
++    }
++    for (i = 0; i < ARRAY_SIZE(factory->interfaces); ++i)
++    {
++        if (factory->interfaces[i].iid && IsEqualGUID( iid, factory->interfaces[i].iid ))
++        {
++            *out = &factory->interfaces[i];
++            return S_OK;
++        }
++    }
++
++    FIXME( "%s: %s not implemented, returning E_NOINTERFACE.\n",
++           debugstr_w(factory->class_name), debugstr_guid(iid) );
++    *out = NULL;
++    return E_NOINTERFACE;
++}
++
++static HRESULT WINAPI stub_interface_QueryInterface( struct stub_interface *iface, REFIID iid, void **out )
++{
++    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out );
++    return factory_query_interface( iface->factory, iid, out );
++}
++
++static ULONG WINAPI stub_interface_AddRef( struct stub_interface *iface )
++{
++    return 2;
++}
++
++static ULONG WINAPI stub_interface_Release( struct stub_interface *iface )
++{
++    return 1;
++}
++
++static HRESULT WINAPI stub_interface_GetIids( struct stub_interface *iface, ULONG *count, IID **iids )
++{
++    FIXME( "iface %p, count %p, iids %p stub!\n", iface, count, iids );
++    return E_NOTIMPL;
++}
++
++static HRESULT WINAPI stub_interface_GetRuntimeClassName( struct stub_interface *iface, HSTRING *name )
++{
++    return WindowsCreateString( iface->factory->class_name, wcslen( iface->factory->class_name ), name );
++}
++
++static HRESULT WINAPI stub_interface_GetTrustLevel( struct stub_interface *iface, TrustLevel *level )
++{
++    *level = BaseTrust;
++    return S_OK;
++}
++
++/* IInspectable methods followed by stubs. */
++static const void *stub_interface_vtbl[6 + STUB_METHODS] =
++{
++    stub_interface_QueryInterface,
++    stub_interface_AddRef,
++    stub_interface_Release,
++    stub_interface_GetIids,
++    stub_interface_GetRuntimeClassName,
++    stub_interface_GetTrustLevel,
++    stub_method, stub_method, stub_method, stub_method,
++    stub_method, stub_method, stub_method, stub_method,
++};
++
++static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
++{
++    struct stub_factory *factory = impl_from_IActivationFactory( iface );
++
++    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out );
++    return factory_query_interface( factory, iid, out );
++}
++
++static ULONG WINAPI factory_AddRef( IActivationFactory *iface )
++{
++    return 2;
++}
++
++static ULONG WINAPI factory_Release( IActivationFactory *iface )
++{
++    return 1;
++}
++
++static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *count, IID **iids )
++{
++    FIXME( "iface %p, count %p, iids %p stub!\n", iface, count, iids );
++    return E_NOTIMPL;
++}
++
++static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *name )
++{
++    struct stub_factory *factory = impl_from_IActivationFactory( iface );
++    return WindowsCreateString( factory->class_name, wcslen( factory->class_name ), name );
++}
++
++static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *level )
++{
++    *level = BaseTrust;
++    return S_OK;
++}
++
++static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
++{
++    struct stub_factory *factory = impl_from_IActivationFactory( iface );
++
++    FIXME( "%s: ActivateInstance not implemented.\n", debugstr_w(factory->class_name) );
++    *instance = NULL;
++    return E_NOTIMPL;
++}
++
++static const struct IActivationFactoryVtbl factory_vtbl =
++{
++    factory_QueryInterface,
++    factory_AddRef,
++    factory_Release,
++    factory_GetIids,
++    factory_GetRuntimeClassName,
++    factory_GetTrustLevel,
++    factory_ActivateInstance,
++};
++
++static struct stub_factory storage_file_factory =
++{
++    {&factory_vtbl},
++    L"Windows.Storage.StorageFile",
++    {
++        {stub_interface_vtbl, &storage_file_factory, &IID_IStorageFileStatics_stub},
++    },
++};
++
++IActivationFactory *storage_file_factory_stub = &storage_file_factory.IActivationFactory_iface;
+diff --git a/dlls/windows.ui/Makefile.in b/dlls/windows.ui/Makefile.in
+index a2eae42..437cbef 100644
+--- a/dlls/windows.ui/Makefile.in
++++ b/dlls/windows.ui/Makefile.in
+@@ -7,6 +7,7 @@ SOURCES = \
+ 	corewindow.c \
+ 	inputpane.c \
+ 	main.c \
++	radialcontroller.c \
+ 	uisettings.c \
+ 	uiviewsettings.c \
+ 	weakref.c
+diff --git a/dlls/windows.ui/main.c b/dlls/windows.ui/main.c
+index 9c76661..b94894f 100644
+--- a/dlls/windows.ui/main.c
++++ b/dlls/windows.ui/main.c
+@@ -53,6 +53,9 @@ HRESULT WINAPI DllGetActivationFactory( HSTRING classid, IActivationFactory **fa
+     if (!wcscmp( buffer, RuntimeClass_Windows_UI_Core_CoreWindow ))
+         IActivationFactory_QueryInterface( corewindow_factory, &IID_IActivationFactory, (void **)factory );
+ 
++    if (!*factory && (*factory = radialcontroller_get_factory( buffer )))
++        IActivationFactory_AddRef( *factory );
++
+     if (*factory) return S_OK;
+     return CLASS_E_CLASSNOTAVAILABLE;
+ }
+diff --git a/dlls/windows.ui/private.h b/dlls/windows.ui/private.h
+index 64566fd..f19d4b5 100644
+--- a/dlls/windows.ui/private.h
++++ b/dlls/windows.ui/private.h
+@@ -82,4 +82,6 @@ extern IActivationFactory *corewindow_factory;
+ #define DEFINE_IINSPECTABLE( pfx, iface_type, impl_type, base_iface )                              \
+     DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from_##iface_type, iface_type##_iface, &impl->base_iface )
+ 
++IActivationFactory *radialcontroller_get_factory( const WCHAR *class_name );
++
+ #endif
+diff --git a/dlls/windows.ui/radialcontroller.c b/dlls/windows.ui/radialcontroller.c
+new file mode 100644
+index 0000000..ab0669c
+--- /dev/null
++++ b/dlls/windows.ui/radialcontroller.c
+@@ -0,0 +1,262 @@
++/* WinRT Windows.UI.Input.RadialController* stubs
++ *
++ * Copyright 2026 clistux contributors
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
++ */
++
++/*
++ * Wheel devices (Surface Dial) are not supported. Applications such as CLIP STUDIO PAINT get every
++ * RadialController activation factory before they check whether a dial exists, and crash when one is
++ * missing. These factories exist so that applications can find out that no dial is available:
++ * IRadialControllerStatics::IsSupported reports FALSE and every other method returns E_NOTIMPL.
++ */
++
++#include "private.h"
++#include "wine/debug.h"
++
++WINE_DEFAULT_DEBUG_CHANNEL(ui);
++
++static const GUID IID_IRadialControllerInterop =
++        {0x1b0535c9, 0x57ad, 0x45c1, {0x9d, 0x79, 0xad, 0x5c, 0x34, 0x36, 0x05, 0x13}};
++static const GUID IID_IRadialControllerStatics =
++        {0xfaded0b7, 0xb84c, 0x4894, {0x87, 0xaa, 0x8f, 0x25, 0xaa, 0x5f, 0x28, 0x8b}};
++static const GUID IID_IRadialControllerMenuItemStatics =
++        {0x249e0887, 0xd842, 0x4524, {0x9d, 0xf8, 0xe0, 0xd6, 0x47, 0xed, 0xc8, 0x87}};
++static const GUID IID_IRadialControllerConfigurationInterop =
++        {0x787cdaac, 0x3186, 0x476d, {0x87, 0xe4, 0xb9, 0x37, 0x4a, 0x7b, 0x99, 0x70}};
++
++/* A statics/interop interface whose methods after IInspectable are stubs. */
++struct stub_interface
++{
++    const void *vtbl;
++    struct stub_factory *factory;
++    const GUID *iid;
++};
++
++struct stub_factory
++{
++    IActivationFactory IActivationFactory_iface;
++    const WCHAR *class_name;
++    struct stub_interface interfaces[2];
++};
++
++#define STUB_METHODS 8
++
++static HRESULT WINAPI stub_method( void )
++{
++    return E_NOTIMPL;
++}
++
++static HRESULT WINAPI radial_controller_statics_IsSupported( void *iface, boolean *value )
++{
++    TRACE( "iface %p, value %p.\n", iface, value );
++    if (!value) return E_POINTER;
++    *value = FALSE;
++    return S_OK;
++}
++
++static inline struct stub_factory *impl_from_IActivationFactory( IActivationFactory *iface )
++{
++    return CONTAINING_RECORD( iface, struct stub_factory, IActivationFactory_iface );
++}
++
++static HRESULT factory_query_interface( struct stub_factory *factory, REFIID iid, void **out )
++{
++    unsigned int i;
++
++    if (IsEqualGUID( iid, &IID_IUnknown ) || IsEqualGUID( iid, &IID_IInspectable )
++            || IsEqualGUID( iid, &IID_IAgileObject ) || IsEqualGUID( iid, &IID_IActivationFactory ))
++    {
++        *out = &factory->IActivationFactory_iface;
++        return S_OK;
++    }
++    for (i = 0; i < ARRAY_SIZE(factory->interfaces); ++i)
++    {
++        if (factory->interfaces[i].iid && IsEqualGUID( iid, factory->interfaces[i].iid ))
++        {
++            *out = &factory->interfaces[i];
++            return S_OK;
++        }
++    }
++
++    FIXME( "%s: %s not implemented, returning E_NOINTERFACE.\n",
++           debugstr_w(factory->class_name), debugstr_guid(iid) );
++    *out = NULL;
++    return E_NOINTERFACE;
++}
++
++static HRESULT WINAPI stub_interface_QueryInterface( struct stub_interface *iface, REFIID iid, void **out )
++{
++    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out );
++    return factory_query_interface( iface->factory, iid, out );
++}
++
++static ULONG WINAPI stub_interface_AddRef( struct stub_interface *iface )
++{
++    return 2;
++}
++
++static ULONG WINAPI stub_interface_Release( struct stub_interface *iface )
++{
++    return 1;
++}
++
++static HRESULT WINAPI stub_interface_GetIids( struct stub_interface *iface, ULONG *count, IID **iids )
++{
++    FIXME( "iface %p, count %p, iids %p stub!\n", iface, count, iids );
++    return E_NOTIMPL;
++}
++
++static HRESULT WINAPI stub_interface_GetRuntimeClassName( struct stub_interface *iface, HSTRING *name )
++{
++    return WindowsCreateString( iface->factory->class_name, wcslen( iface->factory->class_name ), name );
++}
++
++static HRESULT WINAPI stub_interface_GetTrustLevel( struct stub_interface *iface, TrustLevel *level )
++{
++    *level = BaseTrust;
++    return S_OK;
++}
++
++/* IInspectable methods followed by stubs. */
++static const void *stub_interface_vtbl[6 + STUB_METHODS] =
++{
++    stub_interface_QueryInterface,
++    stub_interface_AddRef,
++    stub_interface_Release,
++    stub_interface_GetIids,
++    stub_interface_GetRuntimeClassName,
++    stub_interface_GetTrustLevel,
++    stub_method, stub_method, stub_method, stub_method,
++    stub_method, stub_method, stub_method, stub_method,
++};
++
++/* IRadialControllerStatics: IsSupported, CreateForCurrentView. */
++static const void *radial_controller_statics_vtbl[6 + 2] =
++{
++    stub_interface_QueryInterface,
++    stub_interface_AddRef,
++    stub_interface_Release,
++    stub_interface_GetIids,
++    stub_interface_GetRuntimeClassName,
++    stub_interface_GetTrustLevel,
++    radial_controller_statics_IsSupported,
++    stub_method,
++};
++
++static HRESULT WINAPI factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
++{
++    struct stub_factory *factory = impl_from_IActivationFactory( iface );
++
++    TRACE( "iface %p, iid %s, out %p.\n", iface, debugstr_guid(iid), out );
++    return factory_query_interface( factory, iid, out );
++}
++
++static ULONG WINAPI factory_AddRef( IActivationFactory *iface )
++{
++    return 2;
++}
++
++static ULONG WINAPI factory_Release( IActivationFactory *iface )
++{
++    return 1;
++}
++
++static HRESULT WINAPI factory_GetIids( IActivationFactory *iface, ULONG *count, IID **iids )
++{
++    FIXME( "iface %p, count %p, iids %p stub!\n", iface, count, iids );
++    return E_NOTIMPL;
++}
++
++static HRESULT WINAPI factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *name )
++{
++    struct stub_factory *factory = impl_from_IActivationFactory( iface );
++    return WindowsCreateString( factory->class_name, wcslen( factory->class_name ), name );
++}
++
++static HRESULT WINAPI factory_GetTrustLevel( IActivationFactory *iface, TrustLevel *level )
++{
++    *level = BaseTrust;
++    return S_OK;
++}
++
++static HRESULT WINAPI factory_ActivateInstance( IActivationFactory *iface, IInspectable **instance )
++{
++    struct stub_factory *factory = impl_from_IActivationFactory( iface );
++
++    FIXME( "%s: ActivateInstance not implemented.\n", debugstr_w(factory->class_name) );
++    *instance = NULL;
++    return E_NOTIMPL;
++}
++
++static const struct IActivationFactoryVtbl factory_vtbl =
++{
++    factory_QueryInterface,
++    factory_AddRef,
++    factory_Release,
++    factory_GetIids,
++    factory_GetRuntimeClassName,
++    factory_GetTrustLevel,
++    factory_ActivateInstance,
++};
++
++static struct stub_factory radial_controller_factory;
++static struct stub_factory radial_controller_menu_item_factory;
++static struct stub_factory radial_controller_configuration_factory;
++
++static struct stub_factory radial_controller_factory =
++{
++    {&factory_vtbl},
++    L"Windows.UI.Input.RadialController",
++    {
++        {stub_interface_vtbl, &radial_controller_factory, &IID_IRadialControllerInterop},
++        {radial_controller_statics_vtbl, &radial_controller_factory, &IID_IRadialControllerStatics},
++    },
++};
++
++static struct stub_factory radial_controller_menu_item_factory =
++{
++    {&factory_vtbl},
++    L"Windows.UI.Input.RadialControllerMenuItem",
++    {
++        {stub_interface_vtbl, &radial_controller_menu_item_factory, &IID_IRadialControllerMenuItemStatics},
++    },
++};
++
++static struct stub_factory radial_controller_configuration_factory =
++{
++    {&factory_vtbl},
++    L"Windows.UI.Input.RadialControllerConfiguration",
++    {
++        {stub_interface_vtbl, &radial_controller_configuration_factory, &IID_IRadialControllerConfigurationInterop},
++    },
++};
++
++IActivationFactory *radialcontroller_get_factory( const WCHAR *class_name )
++{
++    static struct stub_factory *factories[] =
++    {
++        &radial_controller_factory,
++        &radial_controller_menu_item_factory,
++        &radial_controller_configuration_factory,
++    };
++    unsigned int i;
++
++    for (i = 0; i < ARRAY_SIZE(factories); ++i)
++        if (!wcscmp( class_name, factories[i]->class_name ))
++            return &factories[i]->IActivationFactory_iface;
++    return NULL;
++}
+-- 
+2.56.1
+

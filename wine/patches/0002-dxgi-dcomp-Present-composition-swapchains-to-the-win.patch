@@ -1,0 +1,368 @@
+From 04a1887737f5c3b71cb4af23a7990b064e195d59 Mon Sep 17 00:00:00 2001
+From: neatsorg <neatsorg@users.noreply.github.com>
+Date: Fri, 13 Nov 2026 16:26:32 +0900
+Subject: [PATCH 2/6] dxgi, dcomp: Present composition swapchains to the window
+ they are composed into.
+
+CreateSwapChainForComposition creates an ordinary swapchain on a hidden helper
+window. dcomp keeps the visual tree and, on Commit, points every swapchain in a
+target's tree at the target window through a private data GUID. This covers a
+swapchain that fills its window; real composition is not done.
+---
+ dlls/dcomp/device.c      | 141 +++++++++++++++++++++++++++++++++++++--
+ dlls/dxgi/dxgi_private.h |   5 ++
+ dlls/dxgi/factory.c      |  49 +++++++++++++-
+ dlls/dxgi/swapchain.c    |  11 +++
+ 4 files changed, 197 insertions(+), 9 deletions(-)
+
+diff --git a/dlls/dcomp/device.c b/dlls/dcomp/device.c
+index 87f4ef8..cc7888e 100644
+--- a/dlls/dcomp/device.c
++++ b/dlls/dcomp/device.c
+@@ -37,9 +37,15 @@
+ #include "initguid.h"
+ #include "dcomp.h"
+ #include "wine/debug.h"
++#include "wine/list.h"
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(dcomp);
+ 
++/* Private data GUID understood by Wine's dxgi: tells a composition swapchain which window
++ * to present to. The data is an HWND. Keep in sync with dlls/dxgi/dxgi_private.h. */
++static const GUID WINE_DXGI_COMPOSITION_WINDOW =
++        {0x5d95ce8f, 0xc8c7, 0x44fd, {0xae, 0x4c, 0x9e, 0x47, 0x61, 0xf2, 0x38, 0x05}};
++
+ /* Describe the object passed to SetContent and similar methods. */
+ static const char *debugstr_content(IUnknown *content)
+ {
+@@ -106,8 +112,21 @@ struct visual
+ {
+     IDCompositionVisual2 IDCompositionVisual2_iface;
+     LONG refcount;
++    IUnknown *content;
++    struct visual **children;
++    size_t child_count, child_capacity;
+ };
+ 
++static const IDCompositionVisual2Vtbl visual_vtbl;
++
++/* Only visuals created by this module can be composed. */
++static struct visual *unsafe_impl_from_IDCompositionVisual(IDCompositionVisual *iface)
++{
++    if (!iface || iface->lpVtbl != (const IDCompositionVisualVtbl *)&visual_vtbl)
++        return NULL;
++    return CONTAINING_RECORD((IDCompositionVisual2 *)iface, struct visual, IDCompositionVisual2_iface);
++}
++
+ static inline struct visual *impl_from_IDCompositionVisual2(IDCompositionVisual2 *iface)
+ {
+     return CONTAINING_RECORD(iface, struct visual, IDCompositionVisual2_iface);
+@@ -144,7 +163,14 @@ static ULONG STDMETHODCALLTYPE visual_Release(IDCompositionVisual2 *iface)
+ 
+     if (!refcount)
+     {
++        size_t i;
++
+         TRACE("destroying visual %p.\n", visual);
++        for (i = 0; i < visual->child_count; ++i)
++            IDCompositionVisual2_Release(&visual->children[i]->IDCompositionVisual2_iface);
++        free(visual->children);
++        if (visual->content)
++            IUnknown_Release(visual->content);
+         free(visual);
+     }
+     return refcount;
+@@ -232,26 +258,73 @@ static HRESULT STDMETHODCALLTYPE visual_SetClip(IDCompositionVisual2 *iface, con
+ 
+ static HRESULT STDMETHODCALLTYPE visual_SetContent(IDCompositionVisual2 *iface, IUnknown *content)
+ {
+-    FIXME("visual %p, content %s.\n", iface, debugstr_content(content));
++    struct visual *visual = impl_from_IDCompositionVisual2(iface);
++
++    TRACE("visual %p, content %s.\n", iface, debugstr_content(content));
++
++    if (content)
++        IUnknown_AddRef(content);
++    if (visual->content)
++        IUnknown_Release(visual->content);
++    visual->content = content;
+     return S_OK;
+ }
+ 
+-static HRESULT STDMETHODCALLTYPE visual_AddVisual(IDCompositionVisual2 *iface, IDCompositionVisual *visual,
++static HRESULT STDMETHODCALLTYPE visual_AddVisual(IDCompositionVisual2 *iface, IDCompositionVisual *child,
+         BOOL insert_above, IDCompositionVisual *reference)
+ {
+-    TRACE("visual %p, child %p, insert_above %d, reference %p.\n", iface, visual, insert_above, reference);
++    struct visual *visual = impl_from_IDCompositionVisual2(iface);
++    struct visual *child_impl = unsafe_impl_from_IDCompositionVisual(child);
++
++    TRACE("visual %p, child %p, insert_above %d, reference %p.\n", iface, child, insert_above, reference);
++
++    if (!child_impl)
++        return E_INVALIDARG;
++    if (reference)
++        FIXME("Ignoring the reference visual; children are kept in insertion order.\n");
++
++    if (visual->child_count == visual->child_capacity)
++    {
++        size_t capacity = max(visual->child_capacity * 2, 4);
++        struct visual **children = realloc(visual->children, capacity * sizeof(*children));
++
++        if (!children)
++            return E_OUTOFMEMORY;
++        visual->children = children;
++        visual->child_capacity = capacity;
++    }
++    IDCompositionVisual2_AddRef(&child_impl->IDCompositionVisual2_iface);
++    visual->children[visual->child_count++] = child_impl;
+     return S_OK;
+ }
+ 
+-static HRESULT STDMETHODCALLTYPE visual_RemoveVisual(IDCompositionVisual2 *iface, IDCompositionVisual *visual)
++static HRESULT STDMETHODCALLTYPE visual_RemoveVisual(IDCompositionVisual2 *iface, IDCompositionVisual *child)
+ {
+-    TRACE("visual %p, child %p.\n", iface, visual);
+-    return S_OK;
++    struct visual *visual = impl_from_IDCompositionVisual2(iface);
++    size_t i;
++
++    TRACE("visual %p, child %p.\n", iface, child);
++
++    for (i = 0; i < visual->child_count; ++i)
++    {
++        if ((IDCompositionVisual *)&visual->children[i]->IDCompositionVisual2_iface != child)
++            continue;
++        IDCompositionVisual2_Release(&visual->children[i]->IDCompositionVisual2_iface);
++        memmove(&visual->children[i], &visual->children[i + 1], (visual->child_count - i - 1) * sizeof(*visual->children));
++        --visual->child_count;
++        return S_OK;
++    }
++    return E_INVALIDARG;
+ }
+ 
+ static HRESULT STDMETHODCALLTYPE visual_RemoveAllVisuals(IDCompositionVisual2 *iface)
+ {
++    struct visual *visual = impl_from_IDCompositionVisual2(iface);
++
+     TRACE("visual %p.\n", iface);
++
++    while (visual->child_count)
++        IDCompositionVisual2_Release(&visual->children[--visual->child_count]->IDCompositionVisual2_iface);
+     return S_OK;
+ }
+ 
+@@ -319,6 +392,9 @@ struct target
+     IDCompositionTarget IDCompositionTarget_iface;
+     LONG refcount;
+     HWND hwnd;
++    struct visual *root;
++    IDCompositionDesktopDevice *device;
++    struct list entry; /* in device->targets */
+ };
+ 
+ static inline struct target *impl_from_IDCompositionTarget(IDCompositionTarget *iface)
+@@ -356,6 +432,10 @@ static ULONG STDMETHODCALLTYPE target_Release(IDCompositionTarget *iface)
+     if (!refcount)
+     {
+         TRACE("destroying target %p.\n", target);
++        list_remove(&target->entry);
++        if (target->root)
++            IDCompositionVisual2_Release(&target->root->IDCompositionVisual2_iface);
++        IDCompositionDesktopDevice_Release(target->device);
+         free(target);
+     }
+     return refcount;
+@@ -365,7 +445,17 @@ static HRESULT STDMETHODCALLTYPE target_SetRoot(IDCompositionTarget *iface, IDCo
+ {
+     struct target *target = impl_from_IDCompositionTarget(iface);
+ 
+-    FIXME("target %p (hwnd %p, tick %lu), root visual %p.\n", iface, target->hwnd, GetTickCount(), visual);
++    struct visual *root = unsafe_impl_from_IDCompositionVisual(visual);
++
++    TRACE("target %p (hwnd %p, tick %lu), root visual %p.\n", iface, target->hwnd, GetTickCount(), visual);
++
++    if (visual && !root)
++        return E_INVALIDARG;
++    if (root)
++        IDCompositionVisual2_AddRef(&root->IDCompositionVisual2_iface);
++    if (target->root)
++        IDCompositionVisual2_Release(&target->root->IDCompositionVisual2_iface);
++    target->root = root;
+     return S_OK;
+ }
+ 
+@@ -383,6 +473,7 @@ struct device
+ {
+     IDCompositionDesktopDevice IDCompositionDesktopDevice_iface;
+     LONG refcount;
++    struct list targets;
+ };
+ 
+ static inline struct device *impl_from_IDCompositionDesktopDevice(IDCompositionDesktopDevice *iface)
+@@ -427,9 +518,41 @@ static ULONG STDMETHODCALLTYPE device_Release(IDCompositionDesktopDevice *iface)
+     return refcount;
+ }
+ 
++/* Point every swapchain found in the visual tree at the target window. */
++static void compose_visual(struct visual *visual, HWND hwnd)
++{
++    IDXGISwapChain *swapchain;
++    size_t i;
++
++    if (visual->content && SUCCEEDED(IUnknown_QueryInterface(visual->content,
++            &IID_IDXGISwapChain, (void **)&swapchain)))
++    {
++        HRESULT hr = IDXGISwapChain_SetPrivateData(swapchain, &WINE_DXGI_COMPOSITION_WINDOW, sizeof(hwnd), &hwnd);
++
++        TRACE("visual %p: swapchain %p -> window %p, hr %#lx.\n", visual, swapchain, hwnd, hr);
++        IDXGISwapChain_Release(swapchain);
++    }
++    else if (visual->content)
++    {
++        FIXME("visual %p: cannot compose content %s.\n", visual, debugstr_content(visual->content));
++    }
++
++    for (i = 0; i < visual->child_count; ++i)
++        compose_visual(visual->children[i], hwnd);
++}
++
+ static HRESULT STDMETHODCALLTYPE device_Commit(IDCompositionDesktopDevice *iface)
+ {
++    struct device *device = impl_from_IDCompositionDesktopDevice(iface);
++    struct target *target;
++
+     TRACE("device %p.\n", iface);
++
++    LIST_FOR_EACH_ENTRY(target, &device->targets, struct target, entry)
++    {
++        if (target->root)
++            compose_visual(target->root, target->hwnd);
++    }
+     return S_OK;
+ }
+ 
+@@ -521,6 +644,9 @@ static HRESULT STDMETHODCALLTYPE device_CreateTargetForHwnd(IDCompositionDesktop
+     target->IDCompositionTarget_iface.lpVtbl = &target_vtbl;
+     target->refcount = 1;
+     target->hwnd = hwnd;
++    target->device = iface;
++    IDCompositionDesktopDevice_AddRef(iface);
++    list_add_tail(&impl_from_IDCompositionDesktopDevice(iface)->targets, &target->entry);
+     *out = &target->IDCompositionTarget_iface;
+ 
+     FIXME("device %p, hwnd %s, topmost %d -> target %p.\n", iface, debugstr_hwnd(hwnd), topmost, *out);
+@@ -585,6 +711,7 @@ static HRESULT device_create(IUnknown *rendering_device, REFIID iid, void **out)
+         return E_OUTOFMEMORY;
+     device->IDCompositionDesktopDevice_iface.lpVtbl = &device_vtbl;
+     device->refcount = 1;
++    list_init(&device->targets);
+ 
+     hr = IDCompositionDesktopDevice_QueryInterface(&device->IDCompositionDesktopDevice_iface, iid, out);
+     IDCompositionDesktopDevice_Release(&device->IDCompositionDesktopDevice_iface);
+diff --git a/dlls/dxgi/dxgi_private.h b/dlls/dxgi/dxgi_private.h
+index 483aac4..3dd11d2 100644
+--- a/dlls/dxgi/dxgi_private.h
++++ b/dlls/dxgi/dxgi_private.h
+@@ -185,6 +185,11 @@ struct d3d11_swapchain
+     LONG in_set_fullscreen_state;
+ };
+ 
++/* Private data GUID used by dcomp to tell a composition swapchain which window to present to.
++ * The data is an HWND. Keep in sync with dlls/dcomp. */
++static const GUID WINE_DXGI_COMPOSITION_WINDOW =
++        {0x5d95ce8f, 0xc8c7, 0x44fd, {0xae, 0x4c, 0x9e, 0x47, 0x61, 0xf2, 0x38, 0x05}};
++
+ HRESULT d3d11_swapchain_init(struct d3d11_swapchain *swapchain, struct dxgi_device *device,
+         struct wined3d_swapchain_desc *desc);
+ 
+diff --git a/dlls/dxgi/factory.c b/dlls/dxgi/factory.c
+index ebdb42a..8562be6 100644
+--- a/dlls/dxgi/factory.c
++++ b/dlls/dxgi/factory.c
+@@ -378,13 +378,58 @@ static void STDMETHODCALLTYPE dxgi_factory_UnregisterOcclusionStatus(IWineDXGIFa
+     FIXME("iface %p, cookie %#lx stub!\n", iface, cookie);
+ }
+ 
++static const WCHAR composition_window_class[] = L"__wine_dxgi_composition";
++
++static BOOL WINAPI register_composition_window_class(INIT_ONCE *once, void *param, void **context)
++{
++    WNDCLASSW wc = {0};
++
++    wc.lpfnWndProc = DefWindowProcW;
++    wc.hInstance = GetModuleHandleW(NULL);
++    wc.lpszClassName = composition_window_class;
++    RegisterClassW(&wc);
++    return TRUE;
++}
++
++/* A composition swapchain has no window of its own. We present it to a hidden helper window
++ * until dcomp tells it which window it is composed into (see WINE_DXGI_COMPOSITION_WINDOW).
++ * This only covers a swapchain that fills its target window; real composition is not done. */
+ static HRESULT STDMETHODCALLTYPE dxgi_factory_CreateSwapChainForComposition(IWineDXGIFactory *iface,
+         IUnknown *device, const DXGI_SWAP_CHAIN_DESC1 *desc, IDXGIOutput *output, IDXGISwapChain1 **swapchain)
+ {
+-    FIXME("iface %p, device %p, desc %p, output %p, swapchain %p stub!\n",
++    static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
++    HWND window;
++    HRESULT hr;
++
++    TRACE("iface %p, device %p, desc %p, output %p, swapchain %p.\n",
+             iface, device, desc, output, swapchain);
+ 
+-    return E_NOTIMPL;
++    if (!device || !desc || !swapchain)
++        return DXGI_ERROR_INVALID_CALL;
++
++    TRACE("size %ux%u, format %#x, buffers %u, scaling %#x, swap effect %#x, alpha mode %#x, flags %#x.\n",
++            desc->Width, desc->Height, desc->Format, desc->BufferCount, desc->Scaling,
++            desc->SwapEffect, desc->AlphaMode, desc->Flags);
++
++    InitOnceExecuteOnce(&once, register_composition_window_class, NULL, NULL);
++    if (!(window = CreateWindowExW(0, composition_window_class, NULL, WS_POPUP, 0, 0,
++            max(desc->Width, 1), max(desc->Height, 1), NULL, NULL, GetModuleHandleW(NULL), NULL)))
++    {
++        ERR("Failed to create a helper window, error %lu.\n", GetLastError());
++        return E_FAIL;
++    }
++
++    hr = IWineDXGIFactory_CreateSwapChainForHwnd(iface, device, window, desc, NULL, output, swapchain);
++    if (FAILED(hr))
++    {
++        WARN("Failed to create a composition swapchain, hr %#lx.\n", hr);
++        DestroyWindow(window);
++        return hr;
++    }
++
++    FIXME("Created composition swapchain %p with helper window %p; composition is approximated.\n",
++            *swapchain, window);
++    return hr;
+ }
+ 
+ static UINT STDMETHODCALLTYPE dxgi_factory_GetCreationFlags(IWineDXGIFactory *iface)
+diff --git a/dlls/dxgi/swapchain.c b/dlls/dxgi/swapchain.c
+index 5c49c7f..39c5e16 100644
+--- a/dlls/dxgi/swapchain.c
++++ b/dlls/dxgi/swapchain.c
+@@ -256,6 +256,17 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_SetPrivateData(IDXGISwapChain4
+ 
+     TRACE("iface %p, guid %s, data_size %u, data %p.\n", iface, debugstr_guid(guid), data_size, data);
+ 
++    if (IsEqualGUID(guid, &WINE_DXGI_COMPOSITION_WINDOW) && data_size == sizeof(HWND) && data)
++    {
++        HWND window = *(const HWND *)data;
++
++        TRACE("Presenting composition swapchain %p to window %p.\n", iface, window);
++        wined3d_mutex_lock();
++        wined3d_swapchain_set_window(swapchain->wined3d_swapchain, window);
++        wined3d_mutex_unlock();
++        return S_OK;
++    }
++
+     return dxgi_set_private_data(&swapchain->private_store, guid, data_size, data);
+ }
+ 
+-- 
+2.56.1
+

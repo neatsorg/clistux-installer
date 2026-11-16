@@ -1,0 +1,25 @@
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -1144,7 +1144,21 @@
+     if (owner)
+     {
+         owner = NtUserGetAncestor( owner, GA_ROOT );
+-        owner_win = X11DRV_get_whole_window( owner );
++        /* The window manager can only stack a transient window above a window it manages.
++         * When the owner is not managed (an owned borderless popup, for example a small
++         * hidden window that owns the application's dialogs), make the window transient
++         * for the nearest managed window up the owner chain instead. Otherwise window
++         * managers such as COSMIC may place a modal dialog behind the application's main
++         * window, where it can neither be seen nor closed. */
++        HWND transient_for = owner;
++
++        while (transient_for && !is_managed( transient_for ))
++        {
++            HWND next = NtUserGetWindowRelative( transient_for, GW_OWNER );
++            TRACE( "%p: owner %p is not managed, trying %p\n", data->hwnd, transient_for, next );
++            transient_for = next ? NtUserGetAncestor( next, GA_ROOT ) : 0;
++        }
++        if (transient_for) owner_win = X11DRV_get_whole_window( transient_for );
+     }
+ 
+     if (owner_win)

@@ -1,0 +1,222 @@
+From 663923b7071f062792764035f78ec4d3545c6942 Mon Sep 17 00:00:00 2001
+From: neatsorg <neatsorg@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 14:30:09 +0900
+Subject: [PATCH 6/6] dcomp: Implement DCompositionCreateDevice and
+ IDCompositionDevice on the same device object.
+
+WebView2 asks for IDCompositionDevice when creating a composition controller.
+IDCompositionDevice shares the IDCompositionDesktopDevice implementation and
+reports a valid device state.
+---
+ dlls/dcomp/device.c | 166 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 164 insertions(+), 2 deletions(-)
+
+diff --git a/dlls/dcomp/device.c b/dlls/dcomp/device.c
+index cc7888e..71eadf3 100644
+--- a/dlls/dcomp/device.c
++++ b/dlls/dcomp/device.c
+@@ -472,6 +472,7 @@ static const IDCompositionTargetVtbl target_vtbl =
+ struct device
+ {
+     IDCompositionDesktopDevice IDCompositionDesktopDevice_iface;
++    IDCompositionDevice IDCompositionDevice_iface;
+     LONG refcount;
+     struct list targets;
+ };
+@@ -493,6 +494,14 @@ static HRESULT STDMETHODCALLTYPE device_QueryInterface(IDCompositionDesktopDevic
+         *out = iface;
+         return S_OK;
+     }
++    if (IsEqualGUID(iid, &IID_IDCompositionDevice))
++    {
++        struct device *device = impl_from_IDCompositionDesktopDevice(iface);
++
++        IDCompositionDesktopDevice_AddRef(iface);
++        *out = &device->IDCompositionDevice_iface;
++        return S_OK;
++    }
+ 
+     FIXME("device %p: unsupported interface %s.\n", iface, debugstr_guid(iid));
+     *out = NULL;
+@@ -698,6 +707,156 @@ static const IDCompositionDesktopDeviceVtbl device_vtbl =
+     device_CreateSurfaceFromHwnd,
+ };
+ 
++/* IDCompositionDevice (the Windows 8 interface) shares the implementation above. */
++
++static inline struct device *impl_from_IDCompositionDevice(IDCompositionDevice *iface)
++{
++    return CONTAINING_RECORD(iface, struct device, IDCompositionDevice_iface);
++}
++
++static inline IDCompositionDesktopDevice *desktop_from_IDCompositionDevice(IDCompositionDevice *iface)
++{
++    return &impl_from_IDCompositionDevice(iface)->IDCompositionDesktopDevice_iface;
++}
++
++static HRESULT STDMETHODCALLTYPE device1_QueryInterface(IDCompositionDevice *iface, REFIID iid, void **out)
++{
++    return device_QueryInterface(desktop_from_IDCompositionDevice(iface), iid, out);
++}
++
++static ULONG STDMETHODCALLTYPE device1_AddRef(IDCompositionDevice *iface)
++{
++    return device_AddRef(desktop_from_IDCompositionDevice(iface));
++}
++
++static ULONG STDMETHODCALLTYPE device1_Release(IDCompositionDevice *iface)
++{
++    return device_Release(desktop_from_IDCompositionDevice(iface));
++}
++
++static HRESULT STDMETHODCALLTYPE device1_Commit(IDCompositionDevice *iface)
++{
++    return device_Commit(desktop_from_IDCompositionDevice(iface));
++}
++
++static HRESULT STDMETHODCALLTYPE device1_WaitForCommitCompletion(IDCompositionDevice *iface)
++{
++    return device_WaitForCommitCompletion(desktop_from_IDCompositionDevice(iface));
++}
++
++static HRESULT STDMETHODCALLTYPE device1_GetFrameStatistics(IDCompositionDevice *iface,
++        DCOMPOSITION_FRAME_STATISTICS *statistics)
++{
++    return device_GetFrameStatistics(desktop_from_IDCompositionDevice(iface), statistics);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateTargetForHwnd(IDCompositionDevice *iface, HWND hwnd,
++        BOOL topmost, IDCompositionTarget **target)
++{
++    return device_CreateTargetForHwnd(desktop_from_IDCompositionDevice(iface), hwnd, topmost, target);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateVisual(IDCompositionDevice *iface, IDCompositionVisual **visual)
++{
++    return device_CreateVisual(desktop_from_IDCompositionDevice(iface), (IDCompositionVisual2 **)visual);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateSurface(IDCompositionDevice *iface, UINT width, UINT height,
++        DXGI_FORMAT format, DXGI_ALPHA_MODE alpha_mode, IDCompositionSurface **surface)
++{
++    return device_CreateSurface(desktop_from_IDCompositionDevice(iface), width, height, format, alpha_mode, surface);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateVirtualSurface(IDCompositionDevice *iface, UINT width, UINT height,
++        DXGI_FORMAT format, DXGI_ALPHA_MODE alpha_mode, IDCompositionVirtualSurface **surface)
++{
++    return device_CreateVirtualSurface(desktop_from_IDCompositionDevice(iface), width, height, format, alpha_mode, surface);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateSurfaceFromHandle(IDCompositionDevice *iface,
++        HANDLE handle, IUnknown **surface)
++{
++    return device_CreateSurfaceFromHandle(desktop_from_IDCompositionDevice(iface), handle, surface);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateSurfaceFromHwnd(IDCompositionDevice *iface,
++        HWND hwnd, IUnknown **surface)
++{
++    return device_CreateSurfaceFromHwnd(desktop_from_IDCompositionDevice(iface), hwnd, surface);
++}
++
++#define DEVICE1_FORWARD(name, type) \
++static HRESULT STDMETHODCALLTYPE device1_##name(IDCompositionDevice *iface, type **out) \
++{ \
++    return device_##name(desktop_from_IDCompositionDevice(iface), out); \
++}
++
++DEVICE1_FORWARD(CreateTranslateTransform, IDCompositionTranslateTransform)
++DEVICE1_FORWARD(CreateScaleTransform, IDCompositionScaleTransform)
++DEVICE1_FORWARD(CreateRotateTransform, IDCompositionRotateTransform)
++DEVICE1_FORWARD(CreateSkewTransform, IDCompositionSkewTransform)
++DEVICE1_FORWARD(CreateMatrixTransform, IDCompositionMatrixTransform)
++DEVICE1_FORWARD(CreateTranslateTransform3D, IDCompositionTranslateTransform3D)
++DEVICE1_FORWARD(CreateScaleTransform3D, IDCompositionScaleTransform3D)
++DEVICE1_FORWARD(CreateRotateTransform3D, IDCompositionRotateTransform3D)
++DEVICE1_FORWARD(CreateMatrixTransform3D, IDCompositionMatrixTransform3D)
++DEVICE1_FORWARD(CreateEffectGroup, IDCompositionEffectGroup)
++DEVICE1_FORWARD(CreateRectangleClip, IDCompositionRectangleClip)
++DEVICE1_FORWARD(CreateAnimation, IDCompositionAnimation)
++
++static HRESULT STDMETHODCALLTYPE device1_CreateTransformGroup(IDCompositionDevice *iface,
++        IDCompositionTransform **transforms, UINT count, IDCompositionTransform **group)
++{
++    return device_CreateTransformGroup(desktop_from_IDCompositionDevice(iface), transforms, count, group);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CreateTransform3DGroup(IDCompositionDevice *iface,
++        IDCompositionTransform3D **transforms, UINT count, IDCompositionTransform3D **group)
++{
++    return device_CreateTransform3DGroup(desktop_from_IDCompositionDevice(iface), transforms, count, group);
++}
++
++static HRESULT STDMETHODCALLTYPE device1_CheckDeviceState(IDCompositionDevice *iface, BOOL *valid)
++{
++    TRACE("device %p, valid %p.\n", iface, valid);
++
++    if (!valid)
++        return E_INVALIDARG;
++    *valid = TRUE;
++    return S_OK;
++}
++
++static const IDCompositionDeviceVtbl device1_vtbl =
++{
++    device1_QueryInterface,
++    device1_AddRef,
++    device1_Release,
++    device1_Commit,
++    device1_WaitForCommitCompletion,
++    device1_GetFrameStatistics,
++    device1_CreateTargetForHwnd,
++    device1_CreateVisual,
++    device1_CreateSurface,
++    device1_CreateVirtualSurface,
++    device1_CreateSurfaceFromHandle,
++    device1_CreateSurfaceFromHwnd,
++    device1_CreateTranslateTransform,
++    device1_CreateScaleTransform,
++    device1_CreateRotateTransform,
++    device1_CreateSkewTransform,
++    device1_CreateMatrixTransform,
++    device1_CreateTransformGroup,
++    device1_CreateTranslateTransform3D,
++    device1_CreateScaleTransform3D,
++    device1_CreateRotateTransform3D,
++    device1_CreateMatrixTransform3D,
++    device1_CreateTransform3DGroup,
++    device1_CreateEffectGroup,
++    device1_CreateRectangleClip,
++    device1_CreateAnimation,
++    device1_CheckDeviceState,
++};
++
+ static HRESULT device_create(IUnknown *rendering_device, REFIID iid, void **out)
+ {
+     struct device *device;
+@@ -710,6 +869,7 @@ static HRESULT device_create(IUnknown *rendering_device, REFIID iid, void **out)
+     if (!(device = calloc(1, sizeof(*device))))
+         return E_OUTOFMEMORY;
+     device->IDCompositionDesktopDevice_iface.lpVtbl = &device_vtbl;
++    device->IDCompositionDevice_iface.lpVtbl = &device1_vtbl;
+     device->refcount = 1;
+     list_init(&device->targets);
+ 
+@@ -720,9 +880,11 @@ static HRESULT device_create(IUnknown *rendering_device, REFIID iid, void **out)
+ 
+ HRESULT WINAPI DCompositionCreateDevice(IDXGIDevice *dxgi_device, REFIID iid, void **device)
+ {
+-    FIXME("%p, %s, %p.\n", dxgi_device, debugstr_guid(iid), device);
++    HRESULT hr = device_create((IUnknown *)dxgi_device, iid, device);
+ 
+-    return E_NOTIMPL;
++    FIXME("dxgi_device %p, iid %s, device %p -> hr %#lx, %p.\n",
++            dxgi_device, debugstr_guid(iid), device, hr, device ? *device : NULL);
++    return hr;
+ }
+ 
+ HRESULT WINAPI DCompositionCreateDevice2(IUnknown *rendering_device, REFIID iid, void **device)
+-- 
+2.56.1
+

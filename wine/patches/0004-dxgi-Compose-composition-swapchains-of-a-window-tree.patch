@@ -1,0 +1,328 @@
+From 719048c3ec417ef96ca400f7b1aa646458ade043 Mon Sep 17 00:00:00 2001
+From: neatsorg <neatsorg@users.noreply.github.com>
+Date: Sun, 15 Nov 2026 13:48:37 +0900
+Subject: [PATCH 4/6] dxgi: Compose composition swapchains of a window tree and
+ honour dirty rectangles.
+
+Keep a copy of each composition swapchain's presented frame and, on every Present,
+recompose the root window: the root's frame first, then frames of descendant
+windows blended with premultiplied alpha at their positions. Present1 dirty
+rectangles only update the kept frame where the flip model back buffer is current.
+Fixes flicker and lost content in CLIP STUDIO PAINT's first-run dialogs.
+---
+ dlls/dxgi/dxgi_private.h |   5 +
+ dlls/dxgi/swapchain.c    | 216 ++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 207 insertions(+), 14 deletions(-)
+
+diff --git a/dlls/dxgi/dxgi_private.h b/dlls/dxgi/dxgi_private.h
+index 1682f8b..ecedb06 100644
+--- a/dlls/dxgi/dxgi_private.h
++++ b/dlls/dxgi/dxgi_private.h
+@@ -186,6 +186,11 @@ struct d3d11_swapchain
+ 
+     /* Window a composition swapchain is composed into (set by dcomp), or NULL. */
+     HWND composition_window;
++    struct list composition_entry;
++    /* Last presented frame, kept so the window can be recomposed when another swapchain presents. */
++    HDC composition_dc;
++    HBITMAP composition_bitmap, composition_old_bitmap;
++    unsigned int composition_width, composition_height;
+ };
+ 
+ /* Private data GUID used by dcomp to tell a composition swapchain which window to present to.
+diff --git a/dlls/dxgi/swapchain.c b/dlls/dxgi/swapchain.c
+index 4acd3cc..fc0ef47 100644
+--- a/dlls/dxgi/swapchain.c
++++ b/dlls/dxgi/swapchain.c
+@@ -25,6 +25,18 @@
+ #include <vkd3d.h>
+ 
+ WINE_DEFAULT_DEBUG_CHANNEL(dxgi);
++
++/* Composition swapchains that dcomp has attached to a window (see d3d11_swapchain_present_composition). */
++static struct list composition_swapchains = LIST_INIT(composition_swapchains);
++static CRITICAL_SECTION composition_cs;
++static CRITICAL_SECTION_DEBUG composition_cs_debug =
++{
++    0, 0, &composition_cs,
++    { &composition_cs_debug.ProcessLocksList, &composition_cs_debug.ProcessLocksList },
++      0, 0, { (DWORD_PTR)(__FILE__ ": composition_cs") }
++};
++static CRITICAL_SECTION composition_cs = { &composition_cs_debug, -1, 0, 0, 0, 0 };
++
+ WINE_DECLARE_DEBUG_CHANNEL(winediag);
+ 
+ static DXGI_SWAP_EFFECT dxgi_swap_effect_from_wined3d(enum wined3d_swap_effect swap_effect)
+@@ -234,6 +246,17 @@ static ULONG STDMETHODCALLTYPE d3d11_swapchain_Release(IDXGISwapChain4 *iface)
+     if (!refcount)
+     {
+         IWineDXGIDevice *device = swapchain->device;
++
++        EnterCriticalSection(&composition_cs);
++        if (swapchain->composition_window)
++            list_remove(&swapchain->composition_entry);
++        LeaveCriticalSection(&composition_cs);
++        if (swapchain->composition_dc)
++        {
++            SelectObject(swapchain->composition_dc, swapchain->composition_old_bitmap);
++            DeleteObject(swapchain->composition_bitmap);
++            DeleteDC(swapchain->composition_dc);
++        }
+         if (swapchain->target)
+         {
+             WARN("Releasing fullscreen swapchain.\n");
+@@ -261,7 +284,11 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_SetPrivateData(IDXGISwapChain4
+         HWND window = *(const HWND *)data;
+ 
+         TRACE("Composition swapchain %p is composed into window %p.\n", iface, window);
++        EnterCriticalSection(&composition_cs);
++        if (!swapchain->composition_window)
++            list_add_tail(&composition_swapchains, &swapchain->composition_entry);
+         swapchain->composition_window = window;
++        LeaveCriticalSection(&composition_cs);
+         return S_OK;
+     }
+ 
+@@ -310,40 +337,201 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_GetDevice(IDXGISwapChain4 *ifac
+ 
+ /* IDXGISwapChain1 methods */
+ 
+-/* Composition swapchains are GDI compatible; copy the back buffer to the window they are composed
+- * into. This approximates DirectComposition for a swapchain that fills its window. */
+-static void d3d11_swapchain_blit_to_composition_window(struct d3d11_swapchain *swapchain)
++/* DirectComposition approximation (clistux).
++ *
++ * Composition swapchains are GDI compatible. On every Present we keep a copy of the presented frame,
++ * then recompose the whole window tree the swapchain belongs to: the frame composed into the root
++ * window is drawn first, and frames composed into descendant windows are blended on top with their
++ * premultiplied alpha, at their position relative to the root. The result is copied to the root
++ * window. This handles a swapchain per window (as CLIP STUDIO PAINT uses), not general visual trees. */
++
++static HBITMAP create_composition_dib(HDC dc, unsigned int width, unsigned int height)
+ {
++    BITMAPINFO info = {{sizeof(info.bmiHeader)}};
++    void *bits;
++
++    info.bmiHeader.biWidth = width;
++    info.bmiHeader.biHeight = -(LONG)height;
++    info.bmiHeader.biPlanes = 1;
++    info.bmiHeader.biBitCount = 32;
++    info.bmiHeader.biCompression = BI_RGB;
++    return CreateDIBSection(dc, &info, DIB_RGB_COLORS, &bits, NULL, 0);
++}
++
++/* Keep a copy of the back buffer. Called with composition_cs held. */
++static BOOL d3d11_swapchain_keep_composition_frame(struct d3d11_swapchain *swapchain,
++        const DXGI_PRESENT_PARAMETERS *parameters)
++{
++    BOOL full = !parameters || !parameters->DirtyRectsCount || !parameters->pDirtyRects;
+     struct wined3d_resource_desc desc;
+     struct wined3d_texture *texture;
+-    HDC src_dc, dst_dc;
++    HDC src_dc;
+     HRESULT hr;
+ 
+     wined3d_mutex_lock();
+     if (!(texture = wined3d_swapchain_get_back_buffer(swapchain->wined3d_swapchain, 0)))
+     {
+         wined3d_mutex_unlock();
+-        return;
++        return FALSE;
+     }
+     wined3d_resource_get_desc(wined3d_texture_get_resource(texture), &desc);
++
++    if (!swapchain->composition_dc || swapchain->composition_width != desc.width
++            || swapchain->composition_height != desc.height)
++    {
++        HBITMAP bitmap;
++
++        if (!swapchain->composition_dc && !(swapchain->composition_dc = CreateCompatibleDC(NULL)))
++        {
++            wined3d_mutex_unlock();
++            return FALSE;
++        }
++        if (!(bitmap = create_composition_dib(swapchain->composition_dc, desc.width, desc.height)))
++        {
++            wined3d_mutex_unlock();
++            return FALSE;
++        }
++        if (swapchain->composition_bitmap)
++        {
++            SelectObject(swapchain->composition_dc, bitmap);
++            DeleteObject(swapchain->composition_bitmap);
++        }
++        else
++        {
++            swapchain->composition_old_bitmap = SelectObject(swapchain->composition_dc, bitmap);
++        }
++        swapchain->composition_bitmap = bitmap;
++        swapchain->composition_width = desc.width;
++        swapchain->composition_height = desc.height;
++        full = TRUE;
++    }
++
+     if (FAILED(hr = wined3d_texture_get_dc(texture, 0, &src_dc)))
+     {
+         wined3d_mutex_unlock();
+         WARN("Failed to get a DC for the back buffer, hr %#lx.\n", hr);
+-        return;
++        return FALSE;
++    }
++    if (full)
++    {
++        BitBlt(swapchain->composition_dc, 0, 0, desc.width, desc.height, src_dc, 0, 0, SRCCOPY);
+     }
+-    if ((dst_dc = GetDC(swapchain->composition_window)))
++    else
+     {
+-        BitBlt(dst_dc, 0, 0, desc.width, desc.height, src_dc, 0, 0, SRCCOPY);
+-        ReleaseDC(swapchain->composition_window, dst_dc);
++        /* Flip model: only the dirty rectangles of the back buffer are current. */
++        unsigned int i;
++
++        for (i = 0; i < parameters->DirtyRectsCount; ++i)
++        {
++            const RECT *r = &parameters->pDirtyRects[i];
++
++            BitBlt(swapchain->composition_dc, r->left, r->top, r->right - r->left, r->bottom - r->top,
++                    src_dc, r->left, r->top, SRCCOPY);
++        }
+     }
++    if (parameters && parameters->pScrollRect)
++        FIXME("Ignoring scroll rectangle %s.\n", wine_dbgstr_rect(parameters->pScrollRect));
+     wined3d_texture_release_dc(texture, 0, src_dc);
+     wined3d_mutex_unlock();
+-    TRACE("Copied %ux%u to window %p.\n", desc.width, desc.height, swapchain->composition_window);
++    return TRUE;
++}
++
++static unsigned int window_depth(HWND window, HWND root)
++{
++    unsigned int depth = 0;
++
++    while (window && window != root)
++    {
++        window = GetParent(window);
++        ++depth;
++    }
++    return depth;
++}
++
++/* Recompose every composition swapchain under root into root. Called with composition_cs held. */
++static void compose_window_tree(HWND root)
++{
++    static const BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
++    struct d3d11_swapchain *swapchain;
++    unsigned int depth, max_depth = 0;
++    HBITMAP bitmap, old_bitmap;
++    HDC dc, dst_dc;
++    RECT rect;
++
++    if (!GetClientRect(root, &rect) || rect.right <= 0 || rect.bottom <= 0)
++        return;
++    if (!(dc = CreateCompatibleDC(NULL)))
++        return;
++    if (!(bitmap = create_composition_dib(dc, rect.right, rect.bottom)))
++    {
++        DeleteDC(dc);
++        return;
++    }
++    old_bitmap = SelectObject(dc, bitmap);
++    PatBlt(dc, 0, 0, rect.right, rect.bottom, BLACKNESS);
++
++    LIST_FOR_EACH_ENTRY(swapchain, &composition_swapchains, struct d3d11_swapchain, composition_entry)
++    {
++        if (swapchain->composition_window == root || IsChild(root, swapchain->composition_window))
++            max_depth = max(max_depth, window_depth(swapchain->composition_window, root));
++    }
++
++    /* Draw parents before children. */
++    for (depth = 0; depth <= max_depth; ++depth)
++    {
++        LIST_FOR_EACH_ENTRY(swapchain, &composition_swapchains, struct d3d11_swapchain, composition_entry)
++        {
++            HWND window = swapchain->composition_window;
++            POINT origin = {0, 0};
++
++            if (!swapchain->composition_dc || (window != root && !IsChild(root, window))
++                    || window_depth(window, root) != depth || !IsWindowVisible(window))
++                continue;
++
++            if (!depth)
++            {
++                BitBlt(dc, 0, 0, swapchain->composition_width, swapchain->composition_height,
++                        swapchain->composition_dc, 0, 0, SRCCOPY);
++            }
++            else
++            {
++                MapWindowPoints(window, root, &origin, 1);
++                GdiAlphaBlend(dc, origin.x, origin.y, swapchain->composition_width, swapchain->composition_height,
++                        swapchain->composition_dc, 0, 0, swapchain->composition_width,
++                        swapchain->composition_height, blend);
++            }
++        }
++    }
++
++    if ((dst_dc = GetDC(root)))
++    {
++        BitBlt(dst_dc, 0, 0, rect.right, rect.bottom, dc, 0, 0, SRCCOPY);
++        ReleaseDC(root, dst_dc);
++    }
++    SelectObject(dc, old_bitmap);
++    DeleteObject(bitmap);
++    DeleteDC(dc);
++    TRACE("Recomposed window %p (%ldx%ld).\n", root, rect.right, rect.bottom);
++}
++
++static void d3d11_swapchain_present_composition(struct d3d11_swapchain *swapchain,
++        const DXGI_PRESENT_PARAMETERS *parameters)
++{
++    HWND root;
++
++    if (parameters && parameters->DirtyRectsCount)
++        TRACE("%u dirty rects, first %s.\n", parameters->DirtyRectsCount,
++                parameters->pDirtyRects ? wine_dbgstr_rect(parameters->pDirtyRects) : "(null)");
++
++    EnterCriticalSection(&composition_cs);
++    if (d3d11_swapchain_keep_composition_frame(swapchain, parameters)
++            && (root = GetAncestor(swapchain->composition_window, GA_ROOT)))
++        compose_window_tree(root);
++    LeaveCriticalSection(&composition_cs);
+ }
+ 
+ static HRESULT d3d11_swapchain_present(struct d3d11_swapchain *swapchain,
+-        unsigned int sync_interval, unsigned int flags)
++        unsigned int sync_interval, unsigned int flags, const DXGI_PRESENT_PARAMETERS *parameters)
+ {
+     HRESULT hr;
+ 
+@@ -365,7 +553,7 @@ static HRESULT d3d11_swapchain_present(struct d3d11_swapchain *swapchain,
+     }
+ 
+     if (swapchain->composition_window)
+-        d3d11_swapchain_blit_to_composition_window(swapchain);
++        d3d11_swapchain_present_composition(swapchain, parameters);
+ 
+     if (SUCCEEDED(hr = wined3d_swapchain_present(swapchain->wined3d_swapchain, NULL, NULL, NULL, sync_interval, 0)))
+         InterlockedIncrement(&swapchain->present_count);
+@@ -378,7 +566,7 @@ static HRESULT STDMETHODCALLTYPE DECLSPEC_HOTPATCH d3d11_swapchain_Present(IDXGI
+ 
+     TRACE("iface %p, sync_interval %u, flags %#x.\n", iface, sync_interval, flags);
+ 
+-    return d3d11_swapchain_present(swapchain, sync_interval, flags);
++    return d3d11_swapchain_present(swapchain, sync_interval, flags, NULL);
+ }
+ 
+ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_GetBuffer(IDXGISwapChain4 *iface,
+@@ -755,7 +943,7 @@ static HRESULT STDMETHODCALLTYPE d3d11_swapchain_Present1(IDXGISwapChain4 *iface
+     if (present_parameters)
+         FIXME("Ignored present parameters %p.\n", present_parameters);
+ 
+-    return d3d11_swapchain_present(swapchain, sync_interval, flags);
++    return d3d11_swapchain_present(swapchain, sync_interval, flags, present_parameters);
+ }
+ 
+ static BOOL STDMETHODCALLTYPE d3d11_swapchain_IsTemporaryMonoSupported(IDXGISwapChain4 *iface)
+-- 
+2.56.1
+
