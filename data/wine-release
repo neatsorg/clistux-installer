@@ -2,4 +2,4 @@
 # 版を上げるときは、新しい Wine を公開してから、ここを書き換える
 WINE_NAME=wine-11.4-csp4-x86_64
 WINE_URL=https://github.com/neatsorg/clistux-installer/releases/download/wine-11.4-csp4/wine-11.4-csp4-x86_64.tar.xz
-WINE_SHA256=79f2b4690653a47cf3bc25cc254e97fdc985b77583cacd40c0fd0941864263b9
+WINE_SHA256=4b7fdddb601932babc968130a6caa9266d01b63d6dab6af9b071f1df42158383

@@ -36,11 +36,16 @@ install_wine() {
         ok "Wine の配布ファイルを確かめました"
     fi
 
-    if [[ ! -x "$CLISTUX_DATA/$name/bin/wine" ]]; then
+    # 展開したものには、元の配布ファイルのチェックサムを印として残す。同じ名前でも中身が違えば展開し直す。
+    local have
+    have="$(cat "$CLISTUX_DATA/$name/.clistux-sha256" 2>/dev/null || true)"
+    if [[ ! -x "$CLISTUX_DATA/$name/bin/wine" || "$have" != "$(sha256sum "$archive" | cut -d' ' -f1)" ]]; then
         info "Wine を展開しています…"
         rm -rf "$CLISTUX_DATA/$name.partial"
         mkdir -p "$CLISTUX_DATA/$name.partial"
         run_logged tar -xJf "$archive" -C "$CLISTUX_DATA/$name.partial" --strip-components=1 || die "Wine の展開に失敗しました。"
+        sha256sum "$archive" | cut -d' ' -f1 > "$CLISTUX_DATA/$name.partial/.clistux-sha256"
+        rm -rf "$CLISTUX_DATA/$name"
         mv "$CLISTUX_DATA/$name.partial" "$CLISTUX_DATA/$name"
     fi
     # 使う Wine を切り替える。古い版のフォルダは、update が片付ける。
