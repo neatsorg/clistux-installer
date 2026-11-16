@@ -6,7 +6,7 @@
 CLISTUX_DATA="${CLISTUX_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/clistux}"   # Wine・プレフィックス・起動スクリプト
 CLISTUX_CACHE="${CLISTUX_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/clistux}"     # ダウンロードしたもの
 CLISTUX_STATE="${CLISTUX_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/clistux}" # ログ
-WINE_DIR="$CLISTUX_DATA/wine"          # 使う Wine(版つきのフォルダーへのリンク)
+WINE_DIR="$CLISTUX_DATA/wine"          # 使う Wine(版つきのフォルダへのリンク)
 PREFIX="$CLISTUX_DATA/prefix"          # CSP 専用の Wine のプレフィックス
 BIN_DIR="$CLISTUX_DATA/bin"            # 起動スクリプトなど
 APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"

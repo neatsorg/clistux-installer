@@ -80,7 +80,7 @@ check_input_method() {
 }
 
 # このツール自身を <データの置き場所>/tool に写し、~/.local/bin/clistux から呼べるようにする。
-# 利用者がダウンロードしたフォルダーを消しても、あとで更新・診断・削除ができるように。
+# 利用者がダウンロードしたフォルダを消しても、あとで更新・診断・削除ができるように。
 SELF_DIR="$CLISTUX_DATA/tool"
 SELF_LINK="$HOME/.local/bin/clistux"
 

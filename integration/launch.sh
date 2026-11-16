@@ -3,7 +3,7 @@
 #   csp-launch paint [ファイル]   CLIP STUDIO PAINT(.clip などを開く)
 #   csp-launch studio             CLIP STUDIO
 # このスクリプトは <データの置き場所>/bin/ に置かれる。Wine とプレフィックスは、その一つ上にある。
-# CSP の場所は毎回探すので、CSP を更新してフォルダーの名前が変わっても動く。
+# CSP の場所は毎回探すので、CSP を更新してフォルダの名前が変わっても動く。
 set -u
 
 HERE="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"

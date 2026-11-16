@@ -1,9 +1,161 @@
 # Clistux Installer
 
-CLIP STUDIO PAINT を Linux の Wine で使うための環境を作るインストーラ。
-日本語入力、ペンタブレット、CLIP STUDIO TABMATE を、今日的な Wayland のデスクトップ(COSMIC など)で使えるようにすることを目指す。
+**CLIP STUDIO PAINT(クリスタ)を今日的な Linux 環境で使えるようにするインストーラです。**
 
-**開発中で、まだ公開できる状態ではありません。** 仕様は [docs/spec.md](docs/spec.md)、調査の記録は [docs/research.md](docs/research.md) にあります。
+Windows 版の CLIP STUDIO PAINT を、Wine(Windows のソフトを Linux で動かす仕組み)の上で動かすための準備を、まとめて行います。
+日本語入力、ペンタブレットの筆圧、CLIP STUDIO TABMATE も、そのまま使えるようにします。
+Linux での操作に慣れていない人でも、なるべく手軽に導入できるようにしました。
+開発に AI を利用しています。画像データの学習や生成などには使っていませんが、懸念される方は使用をお控えください。
+なお、このツール自体が、動作中に AI を使うことはありません。
 
-CLIP STUDIO PAINT と CLIP STUDIO TABMATE は CELSYS の製品・商標です。このプロジェクトは CELSYS とは関係がありません。
-CSP 本体は再配布せず、利用者が公式サイトから入手します。
+> **ご注意**
+> - これは有志による非公式のツールです。CLIP STUDIO PAINT の開発元(株式会社セルシス)とは関係がありません。
+>   このツールで動かした CLIP STUDIO PAINT について、セルシスに問い合わせないでください。
+> - CLIP STUDIO PAINT 本体は含まれていません。公式サイトから入手し、ライセンスはご自身でセルシスと結んでください。
+> - Linux での動作は、セルシスの動作保証の対象外です。正常に動かない場合もありえますし、大切な作品は、こまめにバックアップしてください。
+
+## できること
+
+- CLIP STUDIO PAINT と CLIP STUDIO を、アプリのメニューから起動できるようにする
+- `.clip` ファイルを、ダブルクリックで CLIP STUDIO PAINT で開けるようにする
+- 日本語入力(fcitx5・IBus)、ペンタブレットの筆圧、CLIP STUDIO TABMATE を使えるようにする
+- CLIP STUDIO 内の Web の画面(お知らせ・素材のダウンロード・ログイン)を表示・操作できる。素材のダウンロードなども可能
+- ほかの方法(CSPenguin・Bottles など)で入れていた CLIP STUDIO PAINT があるなら、設定・素材・TABMATE の割り当てを引き継ぐ
+- CLIP STUDIO PAINT を新しい版にする、うまく動かないときに診断する、削除する
+
+## 動作環境
+
+| 項目 | 内容 |
+|---|---|
+| PC | 一般的な Intel・AMD の 64bit の PC(x86_64) |
+| Linux | 主なディストリビューションで動くことを目指しています(確認済み: CachyOS) |
+| デスクトップ | COSMIC・KDE Plasma・GNOME など(Wayland でも X11 でも動きます) |
+| CLIP STUDIO PAINT | Windows 版 5.1.5 で動作を確かめています(ほかの版でも動くことが多いですが、「未確認の版」と表示されます) |
+| 空き容量 | 8 GB 以上 |
+
+## はじめての導入
+
+### 1. CLIP STUDIO PAINT のインストーラを入手する
+
+ブラウザで [CLIP STUDIO PAINT の公式サイト](https://www.clipstudio.net/ja/dl/) を開き、**Windows 版** をダウンロードしてください。
+ファイル名は `CSP_515w_setup.exe` のような形です。標準の「ダウンロード」フォルダに保存されていれば、以下の操作を行った際に、このツールが自動で見つけます。
+
+ダウンロードしたファイルを、ダブルクリックで開かないでください(このソフトとは別の動きをするため、正しくインストールできません)。
+
+### 2. 端末に1行貼り付けて、Enter キーを押す
+
+「端末」(ターミナル)を開いて、次の1行を貼り付け、Enter キーを押してください。
+
+```sh
+curl -fsSL https://github.com/neatsorg/clistux-installer/releases/latest/download/install.sh | bash
+```
+
+このあとは、画面の指示に従って進めてください。途中で CLIP STUDIO PAINT のインストーラの画面が開きます。そちらも画面に従って操作してください。全体で 5〜15 分ほどかかります。
+
+- 足りないもの(`python3`・`fontconfig`・`cabextract` など)があるときは、入れるためのコマンドが表示されます。
+  それを実行してから、もう一度上記の1行を実行してください。
+- もし、上記の1行で実行するのが不安なひとは、[リリースのページ](https://github.com/neatsorg/clistux-installer/releases/latest) から
+  `clistux.tar.gz` をダウンロードして展開し、中の `./clistux` を実行しても同様です。
+
+### 3. 起動する
+
+アプリのメニューに「CLIP STUDIO PAINT」と「CLIP STUDIO」が増えます。そちらから起動してください。はじめての起動では、CLIP STUDIO へのログインや登録を求められます。そちらは Windows 版と同様の作業です。わからない方は公式サイトなどを参照してください。
+
+- **ペンの位置がずれるとき**は、CLIP STUDIO PAINT の「ファイル」→「環境設定」→「タブレット」で「マウスモード」を選ぶと、ずれなくなる可能性が高いです。
+- 初回起動時に表示される筆圧調整の画面も、描画位置がずれてうまく描けないときは、いったんスキップしてください。マウスモードに切り替えたあとで、「ファイル」→「筆圧検知レベルの調節」からやり直せます。
+
+## メンテナンスが必要なときは
+
+このツールが導入されていると、端末で `clistux` と入力するだけで、次のメニューが出ます。番号を選ぶと、それぞれの機能を使うことができます。
+
+```text
+  1. CLIP STUDIO PAINT を新しい版にする
+  2. うまく動かないときの診断と修復
+  3. このツールと部品(Wine・WebView2)を新しくする
+  4. CLIP STUDIO TABMATE を使えるようにする
+  5. ほかの方法で入れた CSP から、設定・素材を引き継ぐ
+  6. 削除する
+```
+
+### CLIP STUDIO PAINT を新しい版にする
+
+このツールはバージョンアップにできるだけ対応させたいと考えていますが、うまく動かない可能性もあります。更新は慎重に行ってください。以下が手順です。
+
+1. 公式サイトから、バージョンアップ版の **Windows 版** のインストーラをダウンロードする
+2. CLIP STUDIO PAINT と CLIP STUDIO を完全に閉じる
+3. 端末で `clistux` と入力し、「1」を選ぶ
+
+設定や素材、作品はそのまま残り、引き継ぐことができます。
+
+### CLIP STUDIO TABMATE を使う
+
+端末で `clistux` と入力し、「4」を選んでください(OS の管理者パスワードを聞かれます)。
+TABMATE のペアリングは、デスクトップの Bluetooth の設定から行ってください。
+ボタンの割り当ては、CLIP STUDIO PAINT の「ファイル」→「CLIP STUDIO TABMATE」で変えられます。なお作者は TABMATE 2 での動作を確認していません。
+
+TABMATE は 10 分操作しないと眠ります。CLIP STUDIO ボタン以外のボタンを押すと、また接続します。
+
+### ほかの方法(CSPenguin・Bottles など)で入れた環境から移行する
+
+インストールの途中で、ほかの方法で入れた CLIP STUDIO PAINT が見つかると、引き継ぐかを聞かれます。そこで引き継がなかった場合も、端末コマンド `clistux` →「5」で引き継げます。
+
+- 引き継ぐもの: ツール・ブラシ・ワークスペース・ショートカット・導入済みの素材・TABMATE のボタン割り当てなど
+- 作品(拡張子 `.clip` のファイルなど)は、ふつうは Linux の「ドキュメント」フォルダに保存されているため、明示的に引き継ぐ必要なく、そのまま開くことができます
+- 引き継いだ後には、CLIP STUDIO へのログインをもう一度お願いします
+- 引き継ぎの際に、前の環境は変更しません。引き継ぎが済み、もし不要になった場合は以前に使っていたツールの手順で消してかまいません
+
+## うまく動かないとき
+
+- 起動に失敗すると、画面の右上などに通知が出ます。
+- 端末で `clistux` →「2」を選ぶと、よくある原因を調べて表示します(`clistux doctor` でも同じです)。
+- 記録は `~/.local/state/clistux/` にあります。作者に問い合わせるときは、この中の `launch.log` を添えてください。なお、これはこのツールの記録ですので、内容は株式会社セルシスや CLIP STUDIO PAINT とは関係がありません。そちらに問い合わせしないでください。
+- 作者はこのツールを Linux 7.3.4-1-cachyos、COSMIC-DE(cosmic-comp 1.11)、Intel i9-10900K、GeForce RTX 2070 SUPER、96 GB RAM、Wacom Cintiq 16、CLIP STUDIO TABMATE(初代、CES-50006)という環境で開発しました。当然ながらほかの環境については把握していません。動かない場合は皆さん自身での修正は歓迎します。 PR などは特に想定していませんが、有益そうならマージします。
+
+よくある質問:
+
+- **Web の画面(CLIP STUDIO のメイン画面、初回起動時のイントロダクション等)が真っ白で、何も表示されない**: `clistux` →「3」で、このツールで使う部品を更新してください。
+- **日本語が入力できない**: fcitx5 か IBus が動いているかを確かめてください。動いていれば、CLIP STUDIO PAINT の起動時に自動で連携されます。
+- **画面が出ない・固まった**: `clistux stop` で CLIP STUDIO PAINT と Wine を強制終了できます。もう一度起動してください。失われたデータがある場合にも保障はありませんので、自己責任でバックアップしてください。
+
+## 削除する
+
+端末で `clistux` と入力し、「6」を選んでください。このツールで設置した内容(アプリのメニュー、Wine、CLIP STUDIO PAINT 本体と設定)をすべて消すことができます。
+
+- 本体と設定については、消すかどうかの確認が最後に表示されます。
+- 「ドキュメント」フォルダに保存した作品は消えません。
+
+## 仕組み
+
+- Wine 11 に、CLIP STUDIO PAINT のために必要な修正(パッチ)を加えたものを使います。パッチとビルドの方法は `wine/` にあります。
+- CLIP STUDIO PAINT 専用の Wine の環境(プレフィックス)を `~/.local/share/clistux/` に作ります。ほかの Wine の環境には触れません。
+- Web の画面に使う部品(Microsoft Edge WebView2)は、Microsoft が頒布しているバージョンを入手し、内部で動作を確かめてから使います。
+- 詳しくは [仕様書](docs/spec.md) と [調査の記録](docs/research.md) をご覧ください。
+
+## ライセンス
+
+- このツール: [GNU General Public License v3.0 以降](LICENSE)
+- Wine へのパッチと、それを当ててビルドした Wine: Wine と同じ [GNU Lesser General Public License v2.1 以降](wine/COPYING.LIB)。
+  ソースとパッチは、各リリースに添付しています。
+
+CLIP STUDIO PAINT と CLIP STUDIO TABMATE は株式会社セルシスの製品・商標です。Microsoft Edge WebView2 は Microsoft の製品です。
+
+## 謝辞
+
+- [Wine](https://www.winehq.org/) の開発者のみなさん
+- 調査の参考にした [CSPenguin](https://github.com/parka6060/CSPenguin-Installer) ほか、Linux で CLIP STUDIO PAINT を動かす取り組みをしてきたみなさん
+
+---
+
+## English
+
+Clistux Installer sets up the Windows version of CLIP STUDIO PAINT on Linux with a patched Wine,
+including Japanese input, pen pressure, CLIP STUDIO TABMATE and the WebView2-based pages.
+It is an unofficial tool, not affiliated with CELSYS. CLIP STUDIO PAINT itself is not included.
+
+```sh
+curl -fsSL https://github.com/neatsorg/clistux-installer/releases/latest/download/install.sh | bash
+```
+
+Download the Windows installer of CLIP STUDIO PAINT from the official site first. After installation, run `clistux` for the menu
+(update, diagnose and repair, migrate from other setups, uninstall). The tool is licensed under GPL-3.0-or-later;
+the Wine patches under LGPL-2.1-or-later.

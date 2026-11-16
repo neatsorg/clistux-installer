@@ -1,15 +1,15 @@
 /*
  * wv2check: 指定した WebView2 ランタイムが、この Wine で動くかを確かめる。
  *
- *   wv2check.exe <ランタイムのフォルダー> [秒]
+ *   wv2check.exe <ランタイムのフォルダ> [秒]
  *
- * ランタイムのフォルダー(msedgewebview2.exe のあるフォルダー)を使って WebView2 を作り、短いページを1枚表示する。
+ * ランタイムのフォルダ(msedgewebview2.exe のあるフォルダ)を使って WebView2 を作り、短いページを1枚表示する。
  * 表示が終わったら 0 を返す。うまくいかないときは、次の値を返す。
  *   1  WebView2Loader.dll やランタイムが見つからない、環境を作れない
  *   2  時間切れ(既定は 60 秒)
  *   3  表示に失敗した
  *   4  ブラウザのプロセスが異常終了した
- * ウィンドウは画面に出さない。WebView2Loader.dll は、この exe と同じフォルダーから読み込む。
+ * ウィンドウは画面に出さない。WebView2Loader.dll は、この exe と同じフォルダから読み込む。
  *
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
@@ -248,7 +248,7 @@ int wmain(int argc, WCHAR **argv)
             0, 0, 320, 240, NULL, NULL, wc.hInstance, NULL);
     SetTimer(window, 1, seconds * 1000, NULL);
 
-    /* 利用者のデータは一時フォルダーに分ける(CSP のデータに触れない) */
+    /* 利用者のデータは一時フォルダに分ける(CSP のデータに触れない) */
     GetTempPathW(ARRAY_SIZE(user_data), user_data);
     wcscat(user_data, L"clistux-wv2check");
     hr = create_env(argv[1], user_data, NULL, handler_new(&IID_EnvCompleted, on_environment_created));

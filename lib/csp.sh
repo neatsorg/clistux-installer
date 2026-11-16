@@ -10,7 +10,7 @@ download_dirs() {
     for d in "$HOME/Downloads" "$HOME/ダウンロード"; do [[ -d "$d" ]] && echo "$d"; done
 }
 
-# 「ダウンロード」フォルダーにある、いちばん新しい版の CSP のインストーラ
+# 「ダウンロード」フォルダにある、いちばん新しい版の CSP のインストーラ
 find_csp_installer() {
     if [[ -n "${OPT_CSP_INSTALLER:-}" ]]; then
         [[ -f "$OPT_CSP_INSTALLER" ]] || die "指定された CSP のインストーラがありません: $OPT_CSP_INSTALLER"
@@ -23,7 +23,7 @@ find_csp_installer() {
 }
 
 ask_for_csp_installer() {
-    info "CLIP STUDIO PAINT のインストーラ(Windows 版)が「ダウンロード」フォルダーに見つかりません。"
+    info "CLIP STUDIO PAINT のインストーラ(Windows 版)が「ダウンロード」フォルダに見つかりません。"
     info "次の手順で入手してください:"
     info "  1. ブラウザで $CSP_DOWNLOAD_PAGE を開く"
     info "  2. 「Windows」版をダウンロードする(ファイル名は CSP_xxxw_setup.exe のような形です)"

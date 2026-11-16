@@ -2,7 +2,7 @@
 # wv2check.exe を mingw-w64 の GCC でビルドする(コンテナの Debian 12)。
 # WebView2 SDK(NuGet の Microsoft.Web.WebView2、BSD ライセンス)からヘッダーと x64 の WebView2Loader.dll を取り出して使う。
 #
-# 使い方: integration/wv2check/build.sh [出力先のフォルダー]
+# 使い方: integration/wv2check/build.sh [出力先のフォルダ]
 #   出力: wv2check.exe、WebView2Loader.dll、WebView2-LICENSE.txt
 set -euo pipefail
 

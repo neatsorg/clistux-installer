@@ -6,10 +6,10 @@
 # 引き継がないもの: キャッシュ・一時ファイル、認証・ライセンスに関わるもの(Certification・promenade)。
 #   引き継いだ後に、もう一度ログインしてもらう。
 # 作品: ふつうは「ドキュメント」が Linux の ~/ドキュメント へのリンクなので、何もしなくても見える。
-#   元の環境の「ドキュメント」がふつうのフォルダー(Bottles など)なら、~/ドキュメント の下に写す。
+#   元の環境の「ドキュメント」がふつうのフォルダ(Bottles など)なら、~/ドキュメント の下に写す。
 # 元の環境は変更しない(消すのは元のツールに任せる)。
 
-# 探す場所(プレフィックスか、プレフィックスを並べたフォルダー)
+# 探す場所(プレフィックスか、プレフィックスを並べたフォルダ)
 migrate_search_roots() {
     printf '%s\n' \
         "$HOME/.wine-csp" "$HOME/.wine" \
@@ -20,7 +20,7 @@ migrate_search_roots() {
         "$HOME"/.PlayOnLinux/wineprefix/*
 }
 
-# プレフィックスの中で、CSP の利用者のデータを持っている利用者のフォルダーを返す
+# プレフィックスの中で、CSP の利用者のデータを持っている利用者のフォルダを返す
 migrate_user_dir() {
     local prefix="$1" u
     for u in "$prefix"/drive_c/users/*; do
@@ -31,7 +31,7 @@ migrate_user_dir() {
     return 1
 }
 
-# 引き継ぎ元の候補を「プレフィックス<TAB>利用者のフォルダー」で並べる(このインストーラのプレフィックスは除く)
+# 引き継ぎ元の候補を「プレフィックス<TAB>利用者のフォルダ」で並べる(このインストーラのプレフィックスは除く)
 migrate_candidates() {
     local p u
     while read -r p; do
@@ -51,7 +51,7 @@ migrate_source_busy() {
     return 1
 }
 
-# 写すもの(利用者のフォルダーからの相対パス)と、除くもの
+# 写すもの(利用者のフォルダからの相対パス)と、除くもの
 MIGRATE_ITEMS=(AppData/Roaming/CELSYSUserData AppData/Roaming/CELSYS)
 MIGRATE_EXCLUDES=(
     '*/CacheData' '*/IccTemporary' '*InterProcessTemp*'
@@ -95,7 +95,7 @@ migrate_from() {
     migrate_documents "$src_user"
 }
 
-# 元の環境の「ドキュメント」がふつうのフォルダーなら、作品を ~/ドキュメント の下に写す
+# 元の環境の「ドキュメント」がふつうのフォルダなら、作品を ~/ドキュメント の下に写す
 migrate_documents() {
     local src_docs="$1/Documents" docs dest
     docs="$(xdg-user-dir DOCUMENTS 2>/dev/null || echo "$HOME/Documents")"

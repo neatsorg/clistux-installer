@@ -14,7 +14,7 @@
 #   clistux uninstall    このインストーラが置いたものを消す
 #
 # オプション:
-#   --csp-installer ファイル   CSP のインストーラ(既定: 「ダウンロード」フォルダーの最新のもの)
+#   --csp-installer ファイル   CSP のインストーラ(既定: 「ダウンロード」フォルダの最新のもの)
 #   --wine-archive ファイル    Wine の配布ファイル(公開前の試験用)
 #   --from 場所                migrate で、引き継ぎ元のプレフィックスを指定する
 #   --previous                 webview2 で、前の版に戻す
@@ -199,9 +199,9 @@ cmd_uninstall() {
         warn "CSP 専用の環境($PREFIX)には、CSP 本体と、CSP の設定・素材が入っています。"
         local docs="$PREFIX/drive_c/users/$USER/Documents"
         if [[ -L "$docs" ]]; then
-            info "  「ドキュメント」フォルダーに保存した作品は $(readlink -f "$docs") にあり、ここでは消えません。"
+            info "  「ドキュメント」フォルダに保存した作品は $(readlink -f "$docs") にあり、ここでは消えません。"
         elif [[ -d "$docs" ]]; then
-            warn "この環境の「ドキュメント」フォルダー($docs)は環境の中にあるので、保存した作品も一緒に消えます。"
+            warn "この環境の「ドキュメント」フォルダ($docs)は環境の中にあるので、保存した作品も一緒に消えます。"
             warn "残したい作品は、先にほかの場所へ写してください。"
         fi
         if confirm "これらも消しますか?（元に戻せません）"; then

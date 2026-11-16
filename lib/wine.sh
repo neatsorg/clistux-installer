@@ -63,7 +63,7 @@ install_wine() {
         run_logged tar -xJf "$archive" -C "$CLISTUX_DATA/$name.partial" --strip-components=1 || die "Wine の展開に失敗しました。"
         mv "$CLISTUX_DATA/$name.partial" "$CLISTUX_DATA/$name"
     fi
-    # 使う Wine を切り替える。古い版のフォルダーは、動作を確かめた後に update が片付ける。
+    # 使う Wine を切り替える。古い版のフォルダは、動作を確かめた後に update が片付ける。
     ln -sfn "$name" "$WINE_DIR"
     ok "Wine: $name"
 }
