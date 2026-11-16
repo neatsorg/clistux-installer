@@ -287,3 +287,14 @@ WebView2 SDK 1.0.3179.45 の `WebView2Loader.dll`、STA とメッセージルー
   違いは Wine(自前のビルド、Windows の DLL は GCC)と、上の従属先の修正。どれが効いたかは未確認。
   → インストーラで、動作を確かめた版の WebView2 を入れる必要がある(入れ方は検討中)。
 
+## 7.10 引き継ぎと TABMATE の割り当て(2026-11-16)
+
+- CSP の利用者のデータは `AppData\Roaming\CELSYSUserData\CELSYS`(5.1 系は `CLIPStudioPaintVer1_5_0`)。レジストリには CSP の設定は無い。
+- CLIP STUDIO TABMATE の割り当ては `CLIPStudioPaintVer1_5_0\JoyPad\WTabMateSettings`(SQLite)。表 `working` の各行がボタンの割り当て
+  (`B1Data`〜、中身は UTF-16 の識別子の並び)、表 `general` の `uselatestdefaultsettings` は「最新の初期値を使う」かどうか。
+  機器ごとの識別子では結びついていない(`deviceid` は共通の 100)ので、別の PC や別の Wine に写しても使える。
+- CSP は設定を終了時に保存する(閉じたときに `WTabMateSettings` が書き換わる)。
+- 注意:作者の環境では、11 月 11 日の TABMATE の調査のときに控えたファイル(`WTabMateSettings.bak-20261111`)とは別の、試験中に
+  CSP が作り直したファイルが使われ続けていた。引き継ぎの試験で割り当てが「初期値」に見えたのはこのためで、引き継ぎの不具合ではなかった。
+  調査で設定のファイルを差し替えたときは、元に戻したことを確かめる。
+

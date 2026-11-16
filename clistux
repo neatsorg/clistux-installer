@@ -16,6 +16,8 @@
 # オプション:
 #   --csp-installer ファイル   CSP のインストーラ(既定: 「ダウンロード」フォルダーの最新のもの)
 #   --wine-archive ファイル    Wine の配布ファイル(公開前の試験用)
+#   --from 場所                migrate で、引き継ぎ元のプレフィックスを指定する
+#   --previous                 webview2 で、前の版に戻す
 set -euo pipefail
 
 CLISTUX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
@@ -54,6 +56,9 @@ for f in common check wine prefix csp webview2 desktop tabmate doctor migrate; d
     # shellcheck source=/dev/null
     . "$CLISTUX_ROOT/lib/$f.sh"
 done
+
+# このファイルの先頭の説明(# で始まる行)を、使い方として表示する
+show_usage() { awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$CLISTUX_ROOT/clistux"; }
 
 require_idle() {
     if prefix_busy; then
@@ -215,7 +220,7 @@ cmd_menu() {
         return
     fi
     if [[ ! -t 0 ]]; then
-        sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+        show_usage
         return
     fi
     printf '%sCLIP STUDIO PAINT(%s)は導入済みです。何をしますか?%s\n' "$C_B" "$(csp_version 2>/dev/null || echo 版は不明)" "$C_0"
@@ -253,6 +258,6 @@ case "$CLISTUX_COMMAND" in
     stop) cmd_stop ;;
     uninstall) cmd_uninstall ;;
     migrate) cmd_migrate ;;
-    help|-h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
+    help|-h|--help) show_usage ;;
     *) echo "知らないコマンドです: $CLISTUX_COMMAND(「$(basename "$0") help」で一覧)" >&2; exit 2 ;;
 esac
