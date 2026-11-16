@@ -22,7 +22,8 @@ CACHE="${CLISTUX_CACHE:-$HOME/.cache/clistux}"
 REVISION="${CSP_REVISION:-$(cat "$HERE/REVISION")}"
 NAME="wine-$WINE_VERSION-csp$REVISION-x86_64"
 DIST="$CACHE/dist"
-IMAGE="docker.io/library/almalinux:8"
+# shellcheck source=wine/inputs.sh
+. "$HERE/inputs.sh"
 
 if command -v podman >/dev/null 2>&1; then
     CTR=podman
@@ -44,6 +45,8 @@ done < "$HERE/patches/unix/series"
 mkdir -p "$DIST"
 echo "ビルド: $NAME(パッチ ${#PATCHES[@]} 本)"
 PE_OUT="$CACHE/pe-build/$NAME"
+# ソースはここで1回だけ取得して確かめ、2段のビルドの両方で同じものを使う
+SRC_TAR="$(fetch_wine_source "$WINE_VERSION" "$CACHE/source")" || exit 1
 rm -rf "$PE_OUT"; mkdir -p "$PE_OUT"
 
 # ---- 1. Windows の DLL(mingw-w64 の GCC) -------------------------------------------
@@ -51,10 +54,11 @@ echo "1/2: Windows の DLL をビルドしています(mingw-w64 GCC)"
 # shellcheck disable=SC2086
 "$CTR" ${CTR_GLOBAL_OPTS:-} run ${CTR_RUN_OPTS:-} --rm -i \
     -v "$HERE/patches:/patches:ro,z" \
+    -v "$SRC_TAR:/wine.tar.xz:ro,z" \
     -v "$PE_OUT:/out:z" \
     -e WINE_VERSION="$WINE_VERSION" \
     -e PATCHES="${PATCHES[*]}" \
-    docker.io/library/debian:12 bash -euo pipefail -s << 'PEBUILD'
+    "$IMAGE_DEBIAN" bash -euo pipefail -s << 'PEBUILD'
 export DEBIAN_FRONTEND=noninteractive
 apt-get -qq update
 # Linux 側の機能を外すと、対応する Windows 側の DLL(winex11.drv など)も作られないので、2段目と同じ機能を有効にする
@@ -65,7 +69,7 @@ apt-get -qq install -y --no-install-recommends gcc libc6-dev gcc-mingw-w64 make 
 x86_64-w64-mingw32-gcc --version | head -1
 major="${WINE_VERSION%%.*}"
 cd /tmp
-curl -fsSL "https://dl.winehq.org/wine/source/${major}.x/wine-${WINE_VERSION}.tar.xz" | tar -xJ
+tar -xJf /wine.tar.xz
 cd "wine-${WINE_VERSION}"
 for p in $PATCHES; do patch -p1 --no-backup-if-mismatch < "/patches/$p" > /dev/null; done
 mkdir build && cd build
@@ -94,12 +98,13 @@ echo "2/2: Linux 側をビルドしてまとめています(AlmaLinux 8)"
 # shellcheck disable=SC2086
 "$CTR" ${CTR_GLOBAL_OPTS:-} run ${CTR_RUN_OPTS:-} --rm -i \
     -v "$HERE/patches:/patches:ro,z" \
+    -v "$SRC_TAR:/wine.tar.xz:ro,z" \
     -v "$DIST:/out:z" \
     -v "$PE_OUT:/pe:ro,z" \
     -e WINE_VERSION="$WINE_VERSION" \
     -e NAME="$NAME" \
     -e PATCHES="${PATCHES[*]}" \
-    "$IMAGE" bash -euo pipefail -s << 'BUILD'
+    "$IMAGE_ALMA" bash -euo pipefail -s << 'BUILD'
 dnf -y -q install dnf-plugins-core >/dev/null
 dnf config-manager --set-enabled powertools
 dnf -y -q install gcc make flex bison patch xz curl clang lld llvm \
@@ -111,8 +116,7 @@ dnf -y -q install gcc make flex bison patch xz curl clang lld llvm \
 
 major="${WINE_VERSION%%.*}"
 cd /tmp
-curl -fsSL "https://dl.winehq.org/wine/source/${major}.x/wine-${WINE_VERSION}.tar.xz" -o wine.tar.xz
-tar -xJf wine.tar.xz
+tar -xJf /wine.tar.xz
 cd "wine-${WINE_VERSION}"
 for p in $PATCHES; do
     echo "パッチ: $p"
@@ -165,7 +169,7 @@ echo "wine-${WINE_VERSION} + clistux patches: $PATCHES" > "/tmp/$NAME/share/doc/
 
 cd /tmp
 tar -cJf "/out/$NAME.tar.xz" "$NAME"
-cp wine.tar.xz "/out/wine-${WINE_VERSION}.tar.xz"
+cp /wine.tar.xz "/out/wine-${WINE_VERSION}.tar.xz"
 (cd /out && sha256sum "$NAME.tar.xz" > "$NAME.tar.xz.sha256")
 echo "できました: $NAME.tar.xz"
 BUILD

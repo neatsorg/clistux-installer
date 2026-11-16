@@ -18,6 +18,7 @@
 set -euo pipefail
 
 CLISTUX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+ORIG_ARGS=("$@")
 if [[ $# -gt 0 && "$1" != -* ]]; then
     CLISTUX_COMMAND="$1"; shift
 else
@@ -42,7 +43,7 @@ if [[ -z "${CLISTUX_RELOCATED:-}" && "$CLISTUX_COMMAND" =~ ^(menu|install|update
       && "$CLISTUX_ROOT" == "${CLISTUX_DATA:-${XDG_DATA_HOME:-$HOME/.local/share}/clistux}/tool" ]]; then
     tmp="$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/clistux.XXXXXX")"
     cp -r "$CLISTUX_ROOT/." "$tmp/"
-    CLISTUX_RELOCATED="$tmp" exec "$tmp/clistux" "$CLISTUX_COMMAND" "$@"
+    CLISTUX_RELOCATED="$tmp" exec "$tmp/clistux" "${ORIG_ARGS[@]}"
 fi
 [[ -n "${CLISTUX_RELOCATED:-}" ]] && trap 'rm -rf "$CLISTUX_RELOCATED"' EXIT
 
@@ -122,7 +123,7 @@ cmd_update_csp() {
     info "今の版: $(csp_version 2>/dev/null || echo 不明)"
     run_csp_installer "$installer"
     step "CSP 用の設定を入れ直しています"
-    apply_settings
+    apply_settings preserve
     check_tested_version
     webview2_status || true
     step "アプリのメニューを更新しています"
@@ -138,7 +139,7 @@ cmd_update() {
     step "CSP 専用の環境を新しくしています"
     create_prefix
     step "CSP 用の設定を入れ直しています"
-    apply_settings
+    apply_settings preserve
     step "Web の画面に使う部品(WebView2)を新しくしています"
     update_webview2
     step "起動スクリプトとアプリのメニューを新しくしています"
@@ -180,8 +181,14 @@ cmd_uninstall() {
     rm -rf "$BIN_DIR" "$CLISTUX_DATA"/wine-*-csp*-x86_64 "$WINE_DIR"
     ok "起動スクリプトと Wine を消しました"
     if [[ -d "$PREFIX" ]]; then
-        warn "CSP 専用の環境($PREFIX)には、CSP 本体と、CSP の設定、素材、"
-        warn "そして「ドキュメント」フォルダーに、保存した作品が入っている場合があります。"
+        warn "CSP 専用の環境($PREFIX)には、CSP 本体と、CSP の設定・素材が入っています。"
+        local docs="$PREFIX/drive_c/users/$USER/Documents"
+        if [[ -L "$docs" ]]; then
+            info "  「ドキュメント」フォルダーに保存した作品は $(readlink -f "$docs") にあり、ここでは消えません。"
+        elif [[ -d "$docs" ]]; then
+            warn "この環境の「ドキュメント」フォルダー($docs)は環境の中にあるので、保存した作品も一緒に消えます。"
+            warn "残したい作品は、先にほかの場所へ写してください。"
+        fi
         if confirm "これらも消しますか?（元に戻せません）"; then
             rm -rf "$PREFIX" "$WV2_STATE" && ok "CSP 専用の環境を消しました"   # WebView2 はプレフィックスの中にある
         else

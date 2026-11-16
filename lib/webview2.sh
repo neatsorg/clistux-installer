@@ -34,7 +34,7 @@ wv2check_source() {
 wv2_latest() {
     local page="$CLISTUX_CACHE/webview2/page.html"
     mkdir -p "$CLISTUX_CACHE/webview2"
-    curl -fsSL --retry 3 -A 'Mozilla/5.0' -o "$page" "$WV2_PAGE" || return 1
+    curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -A 'Mozilla/5.0' -o "$page" "$WV2_PAGE" || return 1
     python3 -I - "$page" <<'EOF'
 import re, sys
 s = open(sys.argv[1], encoding='utf-8', errors='replace').read().replace('\\u002F', '/')
@@ -102,26 +102,33 @@ update_webview2() {
     cab="$CLISTUX_CACHE/webview2/Microsoft.WebView2.FixedVersionRuntime.$ver.x64.cab"
     if [[ ! -f "$cab" ]]; then
         info "WebView2 $ver をダウンロードしています(約 300 MB)…"
-        run_logged curl -fL --retry 3 -o "$cab.part" "$url" || { rm -f "$cab.part"; warn "WebView2 のダウンロードに失敗しました。"; return 0; }
+        # URL は wv2_latest が Microsoft のサーバー(https)のものに限っている。転送先も https に限る。
+        run_logged curl -fL --proto '=https' --proto-redir '=https' --max-redirs 3 --retry 3 -o "$cab.part" "$url" \
+            || { rm -f "$cab.part"; warn "WebView2 のダウンロードに失敗しました。"; return 0; }
         mv "$cab.part" "$cab"
     fi
     info "WebView2 $ver を展開しています…"
     rm -rf "$root/$ver" "$root/.extract"
     mkdir -p "$root/.extract"
-    run_logged cabextract -q -d "$root/.extract" "$cab" || { warn "WebView2 の展開に失敗しました。"; rm -rf "$root/.extract"; return 0; }
+    if ! run_logged cabextract -q -d "$root/.extract" "$cab"; then
+        # 壊れたファイルは消して、次回に取り直す
+        rm -rf "$root/.extract" "$cab"
+        warn "WebView2 の展開に失敗しました。もう一度「$(basename "$0") webview2」を実行してください。"
+        return 0
+    fi
     mv "$root/.extract/Microsoft.WebView2.FixedVersionRuntime.$ver.x64" "$root/$ver" && rm -rf "$root/.extract"
 
     info "WebView2 $ver が動くかを確かめています…"
     if wv2_check_version "$ver"; then
         wv2_apply_policy "$ver" || die "WebView2 の設定を入れられませんでした。"
         if [[ -n "$current" && "$current" != "$ver" ]]; then
-            [[ -n "$previous" && "$previous" != "$current" ]] && rm -rf "${root:?}/$previous"
             wv2_state_set "$ver" "$current"
             ok "WebView2: $ver に更新しました(前の $current は控えとして残しました)"
         else
             wv2_state_set "$ver" "$previous"
             ok "WebView2: $ver"
         fi
+        wv2_prune "$(wv2_state_get current)" "$(wv2_state_get previous)"
         rm -f "$cab"
     else
         rm -rf "${root:?}/$ver"
@@ -131,6 +138,17 @@ update_webview2() {
             warn "WebView2 $ver がうまく動きませんでした。CSP の中の Web の画面(お知らせ・素材など)が白くなることがあります。"
         fi
     fi
+}
+
+# 使う版と控えの版のほかは片付ける
+wv2_prune() {
+    local keep1="$1" keep2="$2" d name
+    for d in "$(wv2_root)"/*/; do
+        [[ -d "$d" ]] || continue
+        name="$(basename "$d")"
+        [[ "$name" == "$keep1" || "$name" == "$keep2" ]] && continue
+        rm -rf "${d:?}"
+    done
 }
 
 # 控えの版に戻す

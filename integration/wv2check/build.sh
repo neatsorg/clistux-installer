@@ -7,6 +7,8 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=wine/inputs.sh
+. "$HERE/../../wine/inputs.sh"
 OUT="${1:-${CLISTUX_CACHE:-$HOME/.cache/clistux}/wv2check}"
 SDK_VERSION=1.0.3179.45
 SDK_SHA256=70bd381c5d67f97a6a80294001cde125ab5b24b6d36098ad901d8e15efd752d0
@@ -20,7 +22,7 @@ mkdir -p "$OUT"
 "$CTR" ${CTR_GLOBAL_OPTS:-} run ${CTR_RUN_OPTS:-} --rm -i \
     -v "$HERE:/src:ro,z" -v "$OUT:/out:z" \
     -e SDK_VERSION="$SDK_VERSION" -e SDK_SHA256="$SDK_SHA256" \
-    docker.io/library/debian:12 bash -euo pipefail -s << 'BUILD'
+    "$IMAGE_DEBIAN" bash -euo pipefail -s << 'BUILD'
 export DEBIAN_FRONTEND=noninteractive
 apt-get -qq update
 apt-get -qq install -y --no-install-recommends gcc-mingw-w64-x86-64 curl ca-certificates unzip > /dev/null

@@ -29,7 +29,9 @@ ask_for_csp_installer() {
     info "  2. 「Windows」版をダウンロードする(ファイル名は CSP_xxxw_setup.exe のような形です)"
     info "  3. ダウンロードが終わったら、もう一度このインストーラを実行する"
     info "別の場所に置いた場合は、--csp-installer でファイルを指定できます。"
-    command -v xdg-open >/dev/null && confirm "今ブラウザで開きますか?" && xdg-open "$CSP_DOWNLOAD_PAGE" >/dev/null 2>&1 &
+    if command -v xdg-open >/dev/null && confirm "今ブラウザで開きますか? "; then
+        (xdg-open "$CSP_DOWNLOAD_PAGE" >/dev/null 2>&1 &)
+    fi
     die "CSP のインストーラが必要です。"
 }
 

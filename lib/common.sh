@@ -46,7 +46,7 @@ die() {
 confirm() {
     local answer
     [[ -t 0 ]] || return 1
-    read -r -p "  $*（YまたはNキーで決定。それ以外のキーはNを選択したのと同じになる） [y/N] " answer
+    read -r -p "  $*（Y または N を入力して、Enter キーを押してください。それ以外は N と同じです） [y/N] " answer
     [[ "$answer" == [yY] || "$answer" == [yY][eE][sS] || "$answer" == はい ]]
 }
 

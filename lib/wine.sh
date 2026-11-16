@@ -5,11 +5,17 @@
 
 WINE_RELEASE_URL="${WINE_RELEASE_URL:-}"   # 公開したら、GitHub Releases の URL をここに書く
 
+# 手元にある、チェックサムのそろった最新の配布ファイル(無ければ空)。見つからなくても失敗にはしない。
 find_wine_archive() {
     if [[ -n "${OPT_WINE_ARCHIVE:-}" ]]; then
-        echo "$OPT_WINE_ARCHIVE"; return
+        echo "$OPT_WINE_ARCHIVE"; return 0
     fi
-    ls -1 "$CLISTUX_CACHE"/dist/wine-*-csp*-x86_64.tar.xz 2>/dev/null | sort -V | tail -1
+    local f found=()
+    for f in "$CLISTUX_CACHE"/dist/wine-*-csp*-x86_64.tar.xz; do
+        [[ -f "$f" && -f "$f.sha256" ]] && found+=("$f")
+    done
+    ((${#found[@]})) && printf '%s\n' "${found[@]}" | sort -V | tail -1
+    return 0
 }
 
 # Wine を配置する。同じものが既にあれば何もしない(何度実行しても同じ)。
@@ -22,8 +28,19 @@ install_wine() {
         mkdir -p "$CLISTUX_CACHE/dist"
         archive="$CLISTUX_CACHE/dist/$(basename "$WINE_RELEASE_URL")"
         info "Wine をダウンロードしています…"
-        run_logged curl -fL --retry 3 -o "$archive" "$WINE_RELEASE_URL" || die "Wine のダウンロードに失敗しました。" "インターネットにつながっているか確かめてください。"
-        run_logged curl -fL --retry 3 -o "$archive.sha256" "$WINE_RELEASE_URL.sha256" || die "Wine のチェックサムのダウンロードに失敗しました。"
+        # 一時的な名前で受け取り、チェックサムを確かめてから正式な名前にする(途中で失敗したものを次回に使わない)
+        rm -f "$archive.part" "$archive.sha256.part"
+        run_logged curl -fL --proto '=https' --proto-redir '=https' --retry 3 -o "$archive.sha256.part" "$WINE_RELEASE_URL.sha256" \
+            || die "Wine のチェックサムのダウンロードに失敗しました。" "インターネットにつながっているか確かめてください。"
+        run_logged curl -fL --proto '=https' --proto-redir '=https' --retry 3 -o "$archive.part" "$WINE_RELEASE_URL" \
+            || die "Wine のダウンロードに失敗しました。" "インターネットにつながっているか確かめてください。"
+        sum="$(awk '{print $1}' "$archive.sha256.part")"
+        if ! echo "$sum  $archive.part" | sha256sum -c --status -; then
+            rm -f "$archive.part" "$archive.sha256.part"
+            die "ダウンロードした Wine が壊れています。" "もう一度実行してください。"
+        fi
+        mv "$archive.sha256.part" "$archive.sha256"
+        mv "$archive.part" "$archive"
     fi
     [[ -f "$archive" ]] || die "Wine の配布ファイルがありません: $archive"
 
@@ -32,8 +49,10 @@ install_wine() {
         sum="$(awk '{print $1}' "$archive.sha256")"
         echo "$sum  $archive" | sha256sum -c --status - || die "Wine の配布ファイルが壊れています: $archive" "ファイルを消して、もう一度実行してください。"
         ok "Wine の配布ファイルを確かめました"
+    elif [[ -n "${OPT_WINE_ARCHIVE:-}" ]]; then
+        warn "チェックサム(.sha256)が無いので、指定された配布ファイルを確かめられませんでした"
     else
-        warn "チェックサム(.sha256)が無いので、配布ファイルを確かめられませんでした"
+        die "Wine の配布ファイルのチェックサム(.sha256)がありません: $archive"
     fi
 
     name="$(basename "$archive" .tar.xz)"

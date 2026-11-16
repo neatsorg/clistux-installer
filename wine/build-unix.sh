@@ -14,7 +14,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PATCH_DIR="$HERE/patches/unix"
 CACHE="${CLISTUX_CACHE:-$HOME/.cache/clistux}"
 OUT_DIR="$CACHE/unix-build/wine-$WINE_VERSION"
-IMAGE="docker.io/library/almalinux:8"
+# shellcheck source=wine/inputs.sh
+. "$HERE/inputs.sh"
+SRC_TAR="$(fetch_wine_source "$WINE_VERSION" "$CACHE/source")" || exit 1
 
 # 当てる順番は patches/unix/series に書く(wine/build.sh と同じ)
 PATCHES=()
@@ -39,10 +41,11 @@ mkdir -p "$OUT_DIR"
 # shellcheck disable=SC2086
 "$CTR" ${CTR_GLOBAL_OPTS:-} run ${CTR_RUN_OPTS:-} --rm -i \
     -v "$PATCH_DIR:/patches:ro,z" \
+    -v "$SRC_TAR:/wine.tar.xz:ro,z" \
     -v "$OUT_DIR:/out:z" \
     -e WINE_VERSION="$WINE_VERSION" \
     -e PATCHES="${PATCHES[*]}" \
-    "$IMAGE" bash -euo pipefail -s << 'BUILD'
+    "$IMAGE_ALMA" bash -euo pipefail -s << 'BUILD'
 dnf -y -q install dnf-plugins-core >/dev/null
 dnf config-manager --set-enabled powertools
 dnf -y -q install gcc make flex bison patch xz curl \
@@ -53,7 +56,7 @@ dnf -y -q install gcc make flex bison patch xz curl \
 
 major="${WINE_VERSION%%.*}"
 cd /tmp
-curl -fsSL "https://dl.winehq.org/wine/source/${major}.x/wine-${WINE_VERSION}.tar.xz" | tar -xJ
+tar -xJf /wine.tar.xz
 cd "wine-${WINE_VERSION}"
 for p in $PATCHES; do
     echo "applying $p"
