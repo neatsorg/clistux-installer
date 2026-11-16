@@ -15,7 +15,7 @@
 #
 # オプション:
 #   --csp-installer ファイル   CSP のインストーラ(既定: 「ダウンロード」フォルダの最新のもの)
-#   --wine-archive ファイル    Wine の配布ファイル(公開前の試験用)
+#   --wine-archive ファイル    Wine の配布ファイル(開発・試験用)
 #   --from 場所                migrate で、引き継ぎ元のプレフィックスを指定する
 #   --previous                 webview2 で、前の版に戻す
 set -euo pipefail
@@ -52,7 +52,7 @@ if [[ -z "${CLISTUX_RELOCATED:-}" && "$CLISTUX_COMMAND" =~ ^(menu|install|update
 fi
 [[ -n "${CLISTUX_RELOCATED:-}" ]] && trap 'rm -rf "$CLISTUX_RELOCATED"' EXIT
 
-for f in common check wine prefix csp webview2 desktop tabmate doctor migrate; do
+for f in common release check wine prefix csp webview2 desktop tabmate doctor migrate; do
     # shellcheck source=/dev/null
     . "$CLISTUX_ROOT/lib/$f.sh"
 done
@@ -147,8 +147,10 @@ cmd_update_csp() {
 }
 
 cmd_update() {
-    STEPS=5
+    STEPS=6
     require_idle
+    step "このツールの新しい版を調べています"
+    self_update     # 新しい版があれば、新しい版のツールでこのコマンドをやり直す
     step "Wine を新しくしています"
     install_wine
     step "CSP 専用の環境を新しくしています"

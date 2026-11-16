@@ -85,11 +85,12 @@ SELF_DIR="$CLISTUX_DATA/tool"
 SELF_LINK="$HOME/.local/bin/clistux"
 
 install_self() {
-    local src="${CLISTUX_RELOCATED:-$CLISTUX_ROOT}"
-    if [[ "$CLISTUX_ROOT" != "$SELF_DIR" || -n "${CLISTUX_RELOCATED:-}" ]]; then
+    local src="$CLISTUX_ROOT"     # 一時的な場所から動いているときも、実行中のスクリプトの場所から写す
+    if [[ "$src" != "$SELF_DIR" ]]; then
         rm -rf "$SELF_DIR.new"
         mkdir -p "$SELF_DIR.new"
         cp -r "$src/clistux" "$src/lib" "$src/integration" "$src/data" "$SELF_DIR.new/"
+        [[ -f "$src/install.sh" ]] && cp "$src/install.sh" "$SELF_DIR.new/"
         rm -rf "$SELF_DIR.new/integration/wv2check"     # 道具は Wine の配布物に入っている
         rm -rf "$SELF_DIR" && mv "$SELF_DIR.new" "$SELF_DIR"
     fi
