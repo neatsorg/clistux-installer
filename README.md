@@ -109,7 +109,7 @@ TABMATE は 10 分操作しないと眠ります。CLIP STUDIO ボタン以外�
 - 起動に失敗すると、画面の右上などに通知が出ます。
 - 端末で `clistux` →「2」を選ぶと、よくある原因を調べて表示します(`clistux doctor` でも同じです)。
 - 記録は `~/.local/state/clistux/` にあります。作者に問い合わせるときは、この中の `launch.log` を添えてください。なお、これはこのツールの記録ですので、内容は株式会社セルシスや CLIP STUDIO PAINT とは関係がありません。そちらに問い合わせしないでください。
-- 作者はこのツールを Linux 7.3.4-1-cachyos、COSMIC-DE(cosmic-comp 1.11)、Intel i9-10900K、GeForce RTX 2070 SUPER、96 GB RAM、Wacom Cintiq 16、CLIP STUDIO TABMATE(初代、CES-50006)という環境で開発しました。当然ながらほかの環境については把握していません。動かない場合は皆さん自身での修正は歓迎します。 PR などは特に想定していませんが、有益そうならマージします。
+- 作者はこのツールを Linux 7.3.4-1-cachyos、COSMIC-DE(cosmic-comp 1.11)(いずれも開発時点の最新)、Intel i9-10900K、GeForce RTX 2070 SUPER、96 GB RAM、Wacom Cintiq 16、CLIP STUDIO TABMATE(初代、CES-50006)という環境で開発しました。当然ながらほかの環境については把握していません。動かない場合は皆さん自身での修正は歓迎します。 PR などは特に想定していませんが、有益そうならマージします。
 
 よくある質問:
 
