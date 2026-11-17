@@ -139,7 +139,11 @@ cmd_migrate() {
         mapfile -t list < <(migrate_candidates)
         n=${#list[@]}
         if ((n == 0)); then
-            ((ask)) || info "ほかの方法で入れた CSP は見つかりませんでした(場所を指定するには --from)。"
+            if ((ask)); then
+                ok "ほかの方法で入れた CSP は見つかりませんでした(引き継ぐものはありません)"
+            else
+                info "ほかの方法で入れた CSP は見つかりませんでした(場所を指定するには --from)。"
+            fi
             return 0
         fi
         info "ほかの方法で入れた CLIP STUDIO PAINT が見つかりました:"
