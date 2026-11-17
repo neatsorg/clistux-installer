@@ -1,0 +1,42 @@
+--- a/dlls/winex11.drv/mouse.c
++++ b/dlls/winex11.drv/mouse.c
+@@ -1443,6 +1443,26 @@
+     return TRUE;
+ }
+ 
++/* Wait until the pointer has moved by the drag threshold before a mouse move/size is handed over to the
++ * window manager, like Windows starts moving a window only once the mouse moves. A plain click, or the
++ * first click of a double click on the caption, then stays with the application (double clicking the
++ * caption maximizes the window). Returns FALSE if the button was released before the pointer moved. */
++static BOOL wait_for_drag( Display *display, int button, POINT start )
++{
++    int cx = NtUserGetSystemMetrics( SM_CXDRAG ), cy = NtUserGetSystemMetrics( SM_CYDRAG );
++    Window root, child;
++    unsigned int xstate;
++    int x, y, rootX, rootY;
++
++    for (;;)
++    {
++        if (!XQueryPointer( display, root_window, &root, &child, &rootX, &rootY, &x, &y, &xstate )) return TRUE;
++        if (!(xstate & (Button1Mask << (button - 1)))) return FALSE;
++        if (abs( rootX - start.x ) > cx || abs( rootY - start.y ) > cy) return TRUE;
++        NtUserMsgWaitForMultipleObjectsEx( 0, NULL, 10, 0, 0 );
++    }
++}
++
+ /***********************************************************************
+  *           move_resize_window
+  */
+@@ -1463,6 +1483,12 @@
+ 
+     TRACE( "hwnd %p/%lx, pos %s, dir %d, button %d\n", hwnd, win, wine_dbgstr_point(&pos), dir, button );
+ 
++    if (button && !wait_for_drag( display, button, pos ))
++    {
++        TRACE( "hwnd %p/%lx: button released before dragging, not moving\n", hwnd, win );
++        return;
++    }
++
+     xev.xclient.type = ClientMessage;
+     xev.xclient.window = win;
+     xev.xclient.message_type = x11drv_atom(_NET_WM_MOVERESIZE);
