@@ -101,7 +101,15 @@ check_ntsync() {
 }
 
 check_session() {
-    local desk="${XDG_CURRENT_DESKTOP:-不明}" type="${XDG_SESSION_TYPE:-不明}"
+    local desk="${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-${DESKTOP_SESSION:-}}}" type="${XDG_SESSION_TYPE:-}"
+    # sway など、セッションの種類を設定しないデスクトップもある。画面の接続先から判断する
+    [[ -z "$desk" && -n "${SWAYSOCK:-}" ]] && desk=sway
+    if [[ "$type" != x11 && "$type" != wayland ]]; then
+        if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then type=wayland
+        elif [[ -n "${DISPLAY:-}" ]]; then type=x11
+        fi
+    fi
+    desk="${desk:-不明}"; type="${type:-不明}"
     ok "デスクトップ: $desk($type)"
     [[ "$type" == x11 || "$type" == wayland ]] || warn "デスクトップの種類がわかりませんでした。続けますが、うまく動かないことがあります。"
 }
