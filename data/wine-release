@@ -1,5 +1,5 @@
 # このツールの版が使う Wine(wine/build.sh で作り、GitHub Releases の wine-… のタグに置いたもの)
 # 版を上げるときは、新しい Wine を公開してから、ここを書き換える
-WINE_NAME=wine-11.4-csp4-x86_64
-WINE_URL=https://github.com/neatsorg/clistux-installer/releases/download/wine-11.4-csp4/wine-11.4-csp4-x86_64.tar.xz
-WINE_SHA256=4b7fdddb601932babc968130a6caa9266d01b63d6dab6af9b071f1df42158383
+WINE_NAME=wine-11.4-csp5-x86_64
+WINE_URL=https://github.com/neatsorg/clistux-installer/releases/download/wine-11.4-csp5/wine-11.4-csp5-x86_64.tar.xz
+WINE_SHA256=5d3bd384b51729fa4c74b1d4ef2ce901e3a8955ae77ad61fc2c94e7642c9e73b
