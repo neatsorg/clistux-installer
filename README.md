@@ -116,6 +116,7 @@ TABMATE は 10 分操作しないと眠ります。CLIP STUDIO ボタン以外�
 - **Web の画面(CLIP STUDIO のメイン画面、初回起動時のイントロダクション等)が真っ白で、何も表示されない**: `clistux` →「3」で、このツールで使う部品を更新してください。
 - **日本語が入力できない**: fcitx5 か IBus が動いているかを確かめてください。動いていれば、CLIP STUDIO PAINT の起動時に自動で連携されます。
 - **ペンでタイトルバーを動かしたあと、ウィンドウをつかんだままになる**: Esc キーを押してください(COSMIC で起きることがあります)。
+- **COSMIC で、起動時に画面が画面の外にはみ出す**: [cosmic-geometry](https://github.com/neatsorg/cosmic-geometry) が役に立つことがあります(CLIP STUDIO PAINT に限らない、COSMIC のウィンドウの位置の問題です)。
 - **画面が出ない・固まった**: `clistux stop` で CLIP STUDIO PAINT と Wine を強制終了できます。もう一度起動してください。失われたデータがある場合にも保障はありませんので、自己責任でバックアップしてください。
 
 ## 削除する
