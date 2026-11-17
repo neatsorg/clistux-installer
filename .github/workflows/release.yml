@@ -23,6 +23,9 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           [[ "v$(cat data/VERSION)" == "$tag" ]] || { echo "::error::タグ($tag)と data/VERSION($(cat data/VERSION))が違います"; exit 1; }
           for f in clistux install.sh lib/*.sh integration/*.sh integration/workarea/*.sh scripts/*.sh wine/*.sh; do bash -n "$f"; done
+          name="$(sed -n 's/^WINE_NAME=//p' data/wine-release)"
+          [[ "$name" == *"-csp$(cat wine/REVISION)-"* ]] \
+              || { echo "::error::data/wine-release の Wine($name)が、ビルドの設定のリビジョン(wine/REVISION=$(cat wine/REVISION))と違います"; exit 1; }
           url="$(sed -n 's/^WINE_URL=//p' data/wine-release)"
           sum="$(sed -n 's/^WINE_SHA256=//p' data/wine-release)"
           wtag="$(basename "$(dirname "$url")")"

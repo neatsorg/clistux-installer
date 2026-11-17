@@ -59,5 +59,6 @@ self_update() {
     tar -xzf "$tmp/clistux.tar.gz" -C "$tmp/new" --strip-components=1 || die "新しい版を展開できませんでした。"
     ok "このツールを $(tool_version) から $ver にします"
     # 新しい版のツールで、同じコマンドを続ける(新しい Wine・設定・ツール自身の配置は新しい版が行う)
-    CLISTUX_SELF_UPDATED=1 CLISTUX_RELOCATED="$tmp" exec "$tmp/new/clistux" "${ORIG_ARGS[@]}"
+    # メニューから選んだときも、新しい版はメニューに戻らずに update を続ける(オプションはそのまま渡す)
+    CLISTUX_SELF_UPDATED=1 CLISTUX_RELOCATED="$tmp" exec "$tmp/new/clistux" update "${ORIG_OPTS[@]}"
 }

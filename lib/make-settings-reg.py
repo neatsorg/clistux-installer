@@ -186,8 +186,9 @@ for key, name, kind, value in desired:
     else:
         cur = current(key, name)
         prev = applied.get(ident(key, name))
-        # 値が無い・すでに同じ・前回このツールが入れた値のまま なら入れる。それ以外は利用者が変えたとみなして残す
-        ok = cur is None or same(cur, want) or same(cur, prev)
+        # 入れる: 新しい設定(前回の記録も今の値も無い)、すでに同じ、前回このツールが入れた値のまま。
+        # 残す: 値が変えられている、または前回入れた値が消されている(利用者が消した)
+        ok = (cur is None and prev is None) or same(cur, want) or same(cur, prev)
     if ok:
         write.append((key, name, kind, value))
         record.append([key, name, kind, value])

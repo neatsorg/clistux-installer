@@ -60,9 +60,19 @@ MIGRATE_EXCLUDES=(
 )
 
 migrate_from() {
-    local src_prefix="$1" src_user="$2" dst_user stamp item size_kb avail_kb ex=()
+    local src_prefix="$1" src_user="$2" dst_user stamp item size_kb avail_kb ex=() items=()
     dst_user="$PREFIX/drive_c/users/$USER"
     [[ -d "$dst_user" ]] || die "CSP 専用の環境がまだありません。先に導入してください。"
+    # 移行先そのもの(リンク経由を含む)からは引き継げない
+    if [[ "$(readlink -f "$src_prefix")" == "$(readlink -f "$PREFIX")" \
+          || "$(readlink -f "$src_user")" == "$(readlink -f "$dst_user")" ]]; then
+        die "引き継ぎ元に、このツールの環境そのものが指定されています。" "ほかの方法で入れた環境の場所を指定してください。"
+    fi
+    # 実際にあるものだけを写す(片方しかない環境もある)
+    for item in "${MIGRATE_ITEMS[@]}"; do
+        [[ -d "$src_user/$item" ]] && items+=("$item")
+    done
+    ((${#items[@]})) || die "引き継ぎ元に、CSP の設定が見つかりません: $src_user"
     if migrate_source_busy "$src_prefix"; then
         die "引き継ぎ元の CLIP STUDIO PAINT か CLIP STUDIO が動いています。" "保存して閉じてから、もう一度実行してください。"
     fi
@@ -74,22 +84,26 @@ migrate_from() {
 
     # 容量の確認(写す量 + 余裕 1 GB)
     for item in "${MIGRATE_EXCLUDES[@]}"; do ex+=("--exclude=$item"); done
-    size_kb="$(cd "$src_user" && du -sk "${ex[@]}" -- "${MIGRATE_ITEMS[@]}" 2>/dev/null | awk '{s += $1} END {print s + 0}')"
+    # リンクの先も数える(-L)。読めないものがあれば止める
+    if ! size_kb="$(cd "$src_user" && du -skL "${ex[@]}" -- "${items[@]}" 2>> "$LOG" | awk '{s += $1} END {print s + 0}')"; then
+        die "引き継ぎ元の設定を読めませんでした: $src_user"
+    fi
     avail_kb="$(df -Pk "$PREFIX" | awk 'NR==2 {print $4}')"
     ((avail_kb > size_kb + 1024 * 1024)) || die "空き容量が足りません(引き継ぐデータは約 $((size_kb / 1024)) MB)。"
 
     # 新しい環境にすでにある設定は、上書きせずに控えに移す
     stamp="$(date +%Y%m%d-%H%M%S)"
-    for item in "${MIGRATE_ITEMS[@]}"; do
-        if [[ -e "$dst_user/$item" ]]; then
+    for item in "${items[@]}"; do
+        if [[ -e "$dst_user/$item" || -L "$dst_user/$item" ]]; then
             mv "$dst_user/$item" "$dst_user/$item.before-migrate-$stamp"
             info "今の設定を控えに移しました: $(basename "$item").before-migrate-$stamp"
         fi
     done
 
     info "設定と素材を写しています(約 $((size_kb / 1024)) MB)…"
-    (cd "$src_user" && tar -cf - "${ex[@]}" -- "${MIGRATE_ITEMS[@]}" 2>/dev/null) \
-        | (cd "$dst_user" && tar -xf -) || die "設定と素材を写せませんでした。"
+    # シンボリックリンクは、リンクの先の中身を写す(-h)。前の環境を消しても、引き継いだものが失われないように
+    (cd "$src_user" && tar -chf - "${ex[@]}" -- "${items[@]}" 2>> "$LOG") \
+        | (cd "$dst_user" && tar -xf - 2>> "$LOG") || die "設定と素材を写せませんでした。"
     ok "設定と素材を引き継ぎました(引き継ぎ元: $src_prefix)"
 
     migrate_documents "$src_user"
@@ -107,7 +121,9 @@ migrate_documents() {
     if [[ -z "$(find "$src_docs" -mindepth 1 -maxdepth 3 -print -quit 2>/dev/null)" ]]; then
         return 0
     fi
-    dest="$docs/前の環境のドキュメント($(date +%Y-%m-%d))"
+    # 実行のたびに別のフォルダにする(前に写したものや、その後に直した作品を上書きしない)
+    dest="$docs/前の環境のドキュメント($(date +%Y-%m-%d_%H%M%S))"
+    while [[ -e "$dest" ]]; do dest="$dest+"; done
     mkdir -p "$dest"
     cp -a "$src_docs/." "$dest/" || die "作品を写せませんでした: $src_docs"
     ok "前の環境の「ドキュメント」の中身を写しました: $dest"

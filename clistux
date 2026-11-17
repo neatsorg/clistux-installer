@@ -22,6 +22,8 @@ set -euo pipefail
 
 CLISTUX_ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 ORIG_ARGS=("$@")
+ORIG_OPTS=("$@")                                    # コマンドの名前を除いたオプション
+[[ $# -gt 0 && "$1" != -* ]] && ORIG_OPTS=("${@:2}")
 if [[ $# -gt 0 && "$1" != -* ]]; then
     CLISTUX_COMMAND="$1"; shift
 else
