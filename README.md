@@ -29,7 +29,7 @@ Linux での操作に慣れていない人でも、なるべく手軽に導入�
 |---|---|
 | PC | 一般的な Intel・AMD の 64bit の PC(x86_64) |
 | Linux | 主なディストリビューションで動くことを目指しています(確認済み: CachyOS) |
-| デスクトップ | COSMIC・KDE Plasma・GNOME など(Wayland でも X11 でも動きます) |
+| デスクトップ | COSMIC・KDE Plasma・GNOME など(Wayland でも X11 でも動きます)。Hyprland では、まだうまく動きません(下記) |
 | CLIP STUDIO PAINT | Windows 版 5.1.5 で動作を確かめています(ほかの版でも動くことが多いですが、「未確認の版」と表示されます) |
 | 空き容量 | 8 GB 以上 |
 
@@ -117,6 +117,8 @@ TABMATE は 10 分操作しないとスリープ状態になります。CLIP STU
 - **日本語が入力できない**: fcitx5 か IBus が動いているかを確かめてください。動いていれば、CLIP STUDIO PAINT の起動時に自動で連携されます。
 - **ペンでタイトルバーを動かしたあと、ウィンドウをつかんだままになる**: Esc キーを押して解除してください(COSMIC で起きることがあります)。
 - **COSMIC で、起動時に画面が画面の外にはみ出す**: 現バージョンのCOSMIC は、フローティングウィンドウの表示位置を調整できません(CLIP STUDIO PAINT に限らない、COSMIC 自体の仕様です)。どうしてもはみ出さないようにしたい場合は拙作の [cosmic-geometry](https://github.com/neatsorg/cosmic-geometry) が役に立つことがあります。
+- **Hyprland(Omarchy など)で、画面が広がったり、ダイアログやメニューを操作できなかったりする**: 現在の版では、Hyprland にはまだ対応できていません。
+  Omarchy では、Hyprland の設定に `o.window(".*\\.exe", { float = true })` を足すと、窓が余計に広がる問題だけは直ります。
 - **画面が出ない・固まった**: 端末コマンド `clistux stop` で CLIP STUDIO PAINT と Wine を強制終了できます。その後もう一度起動してください。失われたデータがある場合でも保障はありませんので、自己責任でバックアップを欠かさないようにしてください。
 
 ## 削除する
