@@ -47,9 +47,12 @@ fi
 # Wine に、隠したときに X11 の窓を作り直させる(winex11-recreate-unmanaged-on-hide.patch)。
 if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "${XDG_CURRENT_DESKTOP:-}" == *Hyprland* ]]; then
     export WINE_X11_RECREATE_UNMANAGED="${WINE_X11_RECREATE_UNMANAGED:-1}"
+    # ペンを押している間に下の窓が変わると(メニューが開くなど)、同時刻の余分な「離す・押す」が届き、
+    # メニューが開いてすぐ閉じる。Wine に捨てさせる(winex11-drop-spurious-clicks.patch)
+    export WINE_X11_DROP_SPURIOUS_CLICKS="${WINE_X11_DROP_SPURIOUS_CLICKS:-1}"
 fi
 
-# COSMIC: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。
+# COSMIC・Hyprland: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。
 "$HERE/clistux-workarea.sh" || true
 
 args=()

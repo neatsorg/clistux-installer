@@ -161,7 +161,7 @@ CLIP STUDIO PAINT(以下 CSP)を Linux の Wine で使うための環境を、1�
 
 - 起動用のスクリプトを1つ置き、環境変数をそこに集める。
 - `.desktop` ファイルを置き、アプリのメニューから起動できるようにする。`.clip` ファイルの関連付けも行う。
-- 起動前に、COSMIC が X11 に作業領域を知らせない問題への対処(作業領域ヘルパー)を実行する。
+- 起動前に、COSMIC と Hyprland が X11 に作業領域を知らせない問題への対処(作業領域ヘルパー)を実行する。
 - 起動が遅い原因と対策は要調査(ファイルの先読み、wineserver の常駐など)。常駐を増やす対策は、効果を測ってから採る。
 
 ### 6. 日本語入力
@@ -207,7 +207,7 @@ clistux/
 ├── integration/
 │   ├── udev/           # TABMATE の udev ルール
 │   ├── desktop/        # .desktop・MIME
-│   └── workarea/       # COSMIC 用の作業領域ヘルパー
+│   └── workarea/       # COSMIC・Hyprland 用の作業領域ヘルパー
 └── docs/               # 仕様書、調査メモ、利用者向けの説明(日本語・英語)
 ```
 
