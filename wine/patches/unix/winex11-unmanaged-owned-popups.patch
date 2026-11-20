@@ -1,6 +1,6 @@
 --- a/dlls/winex11.drv/window.c
 +++ b/dlls/winex11.drv/window.c
-@@ -444,6 +444,26 @@
+@@ -444,6 +444,27 @@
      /* child windows are not managed */
      style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
      if ((style & (WS_CHILD|WS_POPUP)) == WS_CHILD) return FALSE;
@@ -20,14 +20,15 @@
 +        ex_style = NtUserGetWindowLongW( hwnd, GWL_EXSTYLE );
 +        if (enabled && !(ex_style & WS_EX_APPWINDOW))
 +        {
-+            TRACE( "%p: owned borderless popup, not managed\n", hwnd );
++            TRACE( "%p: owned borderless popup, not managed (style %08x ex %08x swp %04x owner %p)\n", hwnd,
++                   (int)style, (int)ex_style, swp_flags, NtUserGetWindowRelative( hwnd, GW_OWNER ) );
 +            return FALSE;
 +        }
 +    }
      /* activated windows are managed */
      if (!(swp_flags & (SWP_NOACTIVATE|SWP_HIDEWINDOW))) return TRUE;
      if (hwnd == get_active_window()) return TRUE;
-@@ -2422,7 +2442,9 @@
+@@ -2422,7 +2443,9 @@
      if (data->vis.visualid != default_visual.visualid)
          data->whole_colormap = XCreateColormap( data->display, root_window, data->vis.visual, AllocNone );
  
@@ -38,7 +39,7 @@
      mask = get_window_attributes( data, &attr ) | CWOverrideRedirect;
      attr.override_redirect = !data->managed;
  
-@@ -3255,7 +3277,12 @@
+@@ -3255,7 +3278,12 @@
      struct window_rects old_rects;
      BOOL is_managed, was_fullscreen, activate = !(swp_flags & SWP_NOACTIVATE), fullscreen = !!(swp_flags & WINE_SWP_FULLSCREEN);
  

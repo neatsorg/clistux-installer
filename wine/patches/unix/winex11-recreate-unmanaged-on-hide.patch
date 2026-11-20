@@ -1,0 +1,60 @@
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -3293,12 +3293,26 @@
+ }
+ 
+ 
++
++static BOOL recreate_unmanaged_on_hide(void)
++{
++    static int enabled = -1;
++
++    if (enabled == -1)
++    {
++        const char *env = getenv( "WINE_X11_RECREATE_UNMANAGED" );
++        enabled = env && *env == '1';
++    }
++    return enabled;
++}
++
+ /***********************************************************************
+  *		WindowPosChanged   (X11DRV.@)
+  */
+ void X11DRV_WindowPosChanged( HWND hwnd, HWND insert_after, HWND owner_hint, UINT swp_flags,
+                               const struct window_rects *new_rects, struct window_surface *surface )
+ {
++    BOOL was_shown;
+     struct x11drv_win_data *data;
+     UINT ex_style = NtUserGetWindowLongW( hwnd, GWL_EXSTYLE ), new_style = NtUserGetWindowLongW( hwnd, GWL_STYLE );
+     struct window_rects old_rects;
+@@ -3373,6 +3387,7 @@
+ #endif
+     }
+ 
++    was_shown = data->pending_state.wm_state != WithdrawnState;
+     window_set_wm_state( data, get_desired_wm_state( new_style, new_rects ), activate );
+     if (!data->wm_state_serial && data->pending_state.wm_state != WithdrawnState)
+     {
+@@ -3380,6 +3395,22 @@
+         update_net_wm_states( data );
+     }
+ 
++    /* Some compositors (e.g. Hyprland) don't show an override-redirect window again once it has been
++     * unmapped, so tooltips and menus only appear the first time. Recreate the X window of an unmanaged
++     * window when it is hidden, so that it is a new window to the compositor the next time it is shown.
++     * Enabled with WINE_X11_RECREATE_UNMANAGED=1. */
++    if (was_shown && data->pending_state.wm_state == WithdrawnState && !data->managed && !data->embedded &&
++        data->whole_window && recreate_unmanaged_on_hide())
++    {
++        Window client_window = data->client_window;
++
++        TRACE( "%p: recreating hidden unmanaged window %lx\n", hwnd, data->whole_window );
++        detach_client_window( data, client_window );
++        destroy_whole_window( data, FALSE );
++        create_whole_window( data );
++        attach_client_window( data, client_window );
++    }
++
+     /* if window was fullscreen and is being hidden, release cursor clipping */
+     was_fullscreen &= data->desired_state.wm_state != NormalState;
+ 

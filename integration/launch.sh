@@ -43,6 +43,12 @@ if [[ -z "${XMODIFIERS:-}" ]]; then
     fi
 fi
 
+# Hyprland: 一度隠した管理外の X11 の窓(ツールチップ・メニュー・一部のダイアログ)を、もう一度表示しても描かない。
+# Wine に、隠したときに X11 の窓を作り直させる(winex11-recreate-unmanaged-on-hide.patch)。
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "${XDG_CURRENT_DESKTOP:-}" == *Hyprland* ]]; then
+    export WINE_X11_RECREATE_UNMANAGED="${WINE_X11_RECREATE_UNMANAGED:-1}"
+fi
+
 # COSMIC: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。
 "$HERE/clistux-workarea.sh" || true
 
