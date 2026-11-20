@@ -43,6 +43,13 @@ if [[ -z "${XMODIFIERS:-}" ]]; then
     fi
 fi
 
+# 所有者のある枠なしの窓(メニュー・ツールチップ)をウィンドウマネージャの管理外にするパッチは、COSMIC で
+# メニューが遠くに出る問題のためのもの。ほかのデスクトップ(Hyprland など)では、入力を受け付けるダイアログ
+# (CLIP STUDIO のプライバシー設定など)まで管理外になってクリックできなくなるので、効かせない。
+if [[ "${XDG_CURRENT_DESKTOP:-}" != *COSMIC* ]]; then
+    export CSPENGUIN_MANAGED_POPUPS="${CSPENGUIN_MANAGED_POPUPS:-1}"
+fi
+
 # COSMIC: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。
 "$HERE/clistux-workarea.sh" || true
 
