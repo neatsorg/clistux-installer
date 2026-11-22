@@ -1,0 +1,118 @@
+--- a/dlls/winex11.drv/x11drv.h
++++ b/dlls/winex11.drv/x11drv.h
+@@ -689,6 +689,8 @@
+     struct window_state current_state; /* window state tracking the current X11 state */
+     unsigned long wm_state_serial;     /* serial of last pending WM_STATE request */
+     unsigned long net_wm_state_serial; /* serial of last pending _NET_WM_STATE request */
++    DWORD         net_wm_state_time;   /* tick count of last pending _NET_WM_STATE request */
++    UINT          net_wm_state_rejected; /* _NET_WM_STATE bits the window manager never answered */
+     unsigned long wm_hints_serial;     /* serial of last pending WM_HINTS request */
+     unsigned long mwm_hints_serial;    /* serial of last pending _MOTIF_WM_HINTS request */
+     unsigned long wm_normal_hints_serial;/* serial of last pending WM_NORMAL_HINTS request */
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -1375,11 +1375,58 @@
+     window_set_net_wm_fullscreen_monitors( data, &monitors );
+ }
+ 
++/* Some window managers (e.g. Hyprland with a rule suppressing maximize requests) silently ignore
++ * _NET_WM_STATE requests. Wine then waits for an answer forever and delays every config change, so
++ * the window can no longer be moved or resized. When WINE_X11_NET_WM_STATE_TIMEOUT is set (in ms),
++ * give up on a request that got no answer in time, and stop requesting the bits that were ignored.
++ * A window whose maximize request was ignored is then maximized by the Win32 side, with a config
++ * request for the maximized rect. */
++static DWORD net_wm_state_timeout(void)
++{
++    static int timeout = -1;
++
++    if (timeout == -1)
++    {
++        const char *env = getenv( "WINE_X11_NET_WM_STATE_TIMEOUT" );
++        timeout = env ? atoi( env ) : 0;
++        if (timeout < 0) timeout = 0;
++    }
++    return timeout;
++}
++
++static void window_request_desired_state( struct x11drv_win_data *data );
++
++static void check_net_wm_state_answer( struct x11drv_win_data *data )
++{
++    DWORD timeout = net_wm_state_timeout();
++    UINT ignored;
++
++    if (!timeout || !data->net_wm_state_serial) return;
++    if (NtGetTickCount() - data->net_wm_state_time < timeout) return;
++
++    ignored = data->pending_state.net_wm_state ^ data->current_state.net_wm_state;
++    WARN( "window %p/%lx, no answer to _NET_WM_STATE %#x serial %lu, giving up on %#x\n", data->hwnd,
++          data->whole_window, data->pending_state.net_wm_state, data->net_wm_state_serial, ignored );
++    data->net_wm_state_rejected |= ignored;
++    data->pending_state.net_wm_state = data->current_state.net_wm_state;
++    data->net_wm_state_serial = 0;
++
++    /* while waiting, the config requests of the maximized window kept its old size: ask for the
++     * maximized rect now, and send the other changes that were delayed */
++    if ((ignored & (1 << NET_WM_STATE_MAXIMIZED)) && (NtUserGetWindowLongW( data->hwnd, GWL_STYLE ) & WS_MAXIMIZE))
++        data->desired_state.rect = data->rects.visible;
++    window_request_desired_state( data );
++}
++
+ static void window_set_net_wm_state( struct x11drv_win_data *data, UINT new_state )
+ {
+-    UINT i, count, old_state = data->pending_state.net_wm_state;
++    UINT i, count, old_state;
+ 
++    check_net_wm_state_answer( data );
++    old_state = data->pending_state.net_wm_state;
+     new_state &= x11drv_init_thread_data()->net_wm_state_mask;
++    /* keep the bits the window manager ignored as they are */
++    new_state = (new_state & ~data->net_wm_state_rejected) | (old_state & data->net_wm_state_rejected);
+     data->desired_state.net_wm_state = new_state;
+     if (!data->whole_window || !data->managed || data->embedded) return; /* no window or not managed, nothing to update */
+     if (data->wm_state_serial) return; /* another WM_STATE update is pending, wait for it to complete */
+@@ -1407,6 +1454,7 @@
+ 
+         data->pending_state.net_wm_state = new_state;
+         data->net_wm_state_serial = NextRequest( data->display );
++        data->net_wm_state_time = NtGetTickCount();
+         TRACE( "window %p/%lx, requesting _NET_WM_STATE %#x serial %lu\n", data->hwnd, data->whole_window,
+                data->pending_state.net_wm_state, data->net_wm_state_serial );
+         XChangeProperty( data->display, data->whole_window, x11drv_atom(_NET_WM_STATE), XA_ATOM,
+@@ -1438,6 +1486,7 @@
+ 
+             data->pending_state.net_wm_state ^= (1 << i);
+             data->net_wm_state_serial = NextRequest( data->display );
++            data->net_wm_state_time = NtGetTickCount();
+             TRACE( "window %p/%lx, requesting _NET_WM_STATE %#x serial %lu\n", data->hwnd, data->whole_window,
+                    data->pending_state.net_wm_state, data->net_wm_state_serial );
+             XSendEvent( data->display, DefaultRootWindow( data->display ), False,
+@@ -1454,8 +1503,9 @@
+     XWindowChanges changes;
+     RECT *new_rect = &rect;
+ 
+-    /* resizing a managed maximized window is not allowed */
+-    if ((style & WS_MAXIMIZE) && data->managed)
++    check_net_wm_state_answer( data );
++    /* resizing a managed maximized window is not allowed, unless the window manager ignored the maximize request */
++    if ((style & WS_MAXIMIZE) && data->managed && !(data->net_wm_state_rejected & (1 << NET_WM_STATE_MAXIMIZED)))
+     {
+         new_rect->right = new_rect->left + old_rect->right - old_rect->left;
+         new_rect->bottom = new_rect->top + old_rect->bottom - old_rect->top;
+@@ -1725,6 +1775,7 @@
+     if (!data->managed) return 0; /* unmanaged windows are managed by the Win32 side */
+     if (data->desired_state.wm_state == WithdrawnState) return 0; /* ignore state changes on invisible windows */
+ 
++    check_net_wm_state_answer( data );
+     if (data->wm_state_serial) return 0; /* another WM_STATE update is pending, wait for it to complete */
+     if (data->net_wm_state_serial) return 0; /* another _NET_WM_STATE update is pending, wait for it to complete */
+     if (data->mwm_hints_serial) return 0; /* another MWM_HINT update is pending, wait for it to complete */
+@@ -1734,6 +1785,8 @@
+     if (data->current_state.wm_state != WithdrawnState) new_style |= WS_VISIBLE;
+     if (data->current_state.wm_state == IconicState) new_style |= WS_MINIMIZE;
+     if (data->current_state.net_wm_state & (1 << NET_WM_STATE_MAXIMIZED)) new_style |= WS_MAXIMIZE;
++    /* the window manager ignored the maximize request, the Win32 side keeps the window maximized */
++    if ((data->net_wm_state_rejected & (1 << NET_WM_STATE_MAXIMIZED)) && (old_style & WS_MAXIMIZE)) new_style |= WS_MAXIMIZE;
+ 
+     if ((old_style & WS_MINIMIZE) && !(new_style & WS_MINIMIZE))
+     {

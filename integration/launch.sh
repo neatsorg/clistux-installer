@@ -50,6 +50,9 @@ if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "${XDG_CURRENT_DESKTOP:-}" == *Hy
     # ペンを押している間に下の窓が変わると(メニューが開くなど)、同時刻の余分な「離す・押す」が届き、
     # メニューが開いてすぐ閉じる。Wine に捨てさせる(winex11-drop-spurious-clicks.patch)
     export WINE_X11_DROP_SPURIOUS_CLICKS="${WINE_X11_DROP_SPURIOUS_CLICKS:-1}"
+    # 最大化などの求めを、設定で黙って捨てることがある(Omarchy の suppress_event = "maximize")。
+    # 返事を待ち続けると窓を動かせなくなるので、1 秒で待つのをやめさせる(winex11-net-wm-state-timeout.patch)
+    export WINE_X11_NET_WM_STATE_TIMEOUT="${WINE_X11_NET_WM_STATE_TIMEOUT:-1000}"
 fi
 
 # COSMIC・Hyprland: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。

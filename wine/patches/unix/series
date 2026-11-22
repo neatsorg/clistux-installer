@@ -7,3 +7,4 @@ winex11-transient-for-managed-owner.patch
 winex11-moveresize-drag-threshold.patch
 winex11-recreate-unmanaged-on-hide.patch
 winex11-drop-spurious-clicks.patch
+winex11-net-wm-state-timeout.patch
