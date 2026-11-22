@@ -20,7 +20,10 @@ here="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && command -v hyprctl >/dev/null 2>&1; then
     # Hyprland: 各モニターのバーなどが占める幅(reserved)から、X11 の座標で作業領域を計算する
     [[ -f "$here/clistux-workarea-hyprland.py" ]] || exit 0
-    new=$(timeout 5 hyprctl monitors -j 2>/dev/null | timeout 5 python3 -I "$here/clistux-workarea-hyprland.py" 2>/dev/null) || exit 0
+    zero_scaling=$(timeout 5 hyprctl -j getoption xwayland:force_zero_scaling 2>/dev/null \
+        | python3 -I -c 'import json, sys; print(json.load(sys.stdin).get("int", 0))' 2>/dev/null) || zero_scaling=0
+    new=$(timeout 5 hyprctl monitors -j 2>/dev/null \
+        | timeout 5 python3 -I "$here/clistux-workarea-hyprland.py" "$zero_scaling" 2>/dev/null) || exit 0
 elif [[ "${XDG_CURRENT_DESKTOP:-}" == *COSMIC* ]]; then
     # COSMIC: 透明な仮の窓を最大化させて、空いた範囲を測る
     probe="$here/clistux-workarea.py"

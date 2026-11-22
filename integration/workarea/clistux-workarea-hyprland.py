@@ -7,7 +7,11 @@
 # Hyprland の reserved(バーなどが占める幅: 左・上・右・下)は、論理ピクセル(倍率で割った値)で表される。
 # 一方、Wine が見るのは XWayland のモニターの位置と大きさ(XRandR)で、倍率や xwayland:force_zero_scaling の設定によって
 # 論理ピクセルとは違うことがある。そこで XRandR のモニターをモニター名で突き合わせ、その位置と大きさを基準に、
-# reserved を同じ比率で換算する。XRandR が使えないときは、Hyprland の位置と論理ピクセルの大きさを使う。
+# reserved を同じ比率で換算する。XRandR が使えないときは、Hyprland の位置と論理ピクセルの大きさを使う
+# (xwayland:force_zero_scaling が有効で倍率が 1 でないモニターがあると、X11 の座標と合わないので何も出さない)。
+# XRandR は使えるのに名前が合わないモニターがあるときも、どの座標系かわからないので何も出さない。
+#
+# 引数: xwayland:force_zero_scaling の値(1 なら有効)。
 import ctypes
 import ctypes.util
 import json
@@ -72,10 +76,15 @@ def main():
     monitors = [m for m in monitors if not m.get("disabled")]
     if not monitors:
         return
+    zero_scaling = len(sys.argv) > 1 and sys.argv[1] == "1"
     x11 = x11_monitors()
-    # 名前で突き合わせられないモニターがあれば、すべて Hyprland の位置で求める。X11 のルートウィンドウの原点は
-    # モニター全体の左上なので、Hyprland の位置が負のときに合わせて、いちばん左上を 0, 0 にずらす
-    use_x11 = all(m.get("name") in x11 for m in monitors)
+    use_x11 = bool(x11)
+    if use_x11 and not all(m.get("name") in x11 for m in monitors):
+        return
+    if not use_x11 and zero_scaling and any((m.get("scale") or 1) != 1 for m in monitors):
+        return
+    # Hyprland の位置で求めるとき: X11 のルートウィンドウの原点はモニター全体の左上なので、
+    # Hyprland の位置が負のときに合わせて、いちばん左上を 0, 0 にずらす
     min_x = min(m["x"] for m in monitors)
     min_y = min(m["y"] for m in monitors)
     areas = []

@@ -15,7 +15,7 @@ hyprland_config_text() {
     local dir="${XDG_CONFIG_HOME:-$HOME/.config}/hypr"
     [[ -d "$dir" ]] || return 0
     find "$dir" -maxdepth 2 -type f \( -name '*.lua' -o -name '*.conf' \) ! -name '*.bak*' -print0 2>/dev/null \
-        | xargs -0 -r cat 2>/dev/null | grep -vE '^[[:space:]]*(--|#)'
+        | xargs -0 -r cat 2>/dev/null | grep -vE '^[[:space:]]*(--|#)' || true
 }
 
 hyprland_option() {
@@ -28,7 +28,7 @@ except ValueError:
 for k in ("int", "str", "float", "custom"):
     if k in o:
         print(o[k]); break
-' 2>/dev/null
+' 2>/dev/null || true
 }
 
 check_hyprland() {
@@ -83,7 +83,7 @@ try:
 except ValueError:
     sys.exit()
 print("\n".join(sorted({t["name"] for t in d.get("tablets", []) if t.get("name")})))
-' 2>/dev/null)
+' 2>/dev/null) || tablets=""
     monitors=$(timeout 3 hyprctl -j monitors 2>/dev/null | python3 -I -c '
 import json, sys
 try:
@@ -92,7 +92,7 @@ except ValueError:
     sys.exit()
 for m in ms:
     print(m.get("name", "") + "\t" + m.get("description", ""))
-' 2>/dev/null)
+' 2>/dev/null) || monitors=""
     output="$(hyprland_option input:tablet:output)"
     if [[ -n "$tablets" && $(grep -c . <<< "$monitors") -gt 1 && ( -z "$output" || "$output" == "[[EMPTY]]" ) ]]; then
         warn "ペンタブレットがあり、モニターが複数ありますが、ペンを割り当てる画面が決まっていません。"
