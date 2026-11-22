@@ -143,6 +143,8 @@ CLIP STUDIO PAINT(以下 CSP)を Linux の Wine で使うための環境を、1�
   (Tahoma + 横幅の指定 + フォントリンク)の日本語が横に約半分に縮む。`wine/patches/unix/win32u-linked-font-width.patch` で直す
   (リンク先のフォントに、元のフォントの縦横比を使う)。Windows のフォントがある環境では、修正の前後で見た目は変わらない。
   この修正を入れた `win32u.so` を配る(`wine/build-unix.sh`)。
+- 縦書きのテキストで英字を横に倒すと、テキストボックスが縦に何千ピクセルも伸びる(Wine の不具合、research.md 7.13)。
+  `wine/patches/unix/win32u-negative-glyph-transform.patch` で直す。これも `win32u.so` に入る。
 
 ### 4.8 ほかの方法で入れた CSP からの引き継ぎ(2026-11-16 に確認)
 

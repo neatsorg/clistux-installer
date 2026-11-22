@@ -350,3 +350,20 @@ WebView2 は 158 が入った(wv2check は通った)。
 - **WebView2 158 か 157 か**: 158 のままで、CLIP STUDIO の Web の画面は使えた(細かくは確かめていない)。
 - 起動の記録の1行目に、Xlib の既定のエラー(`BadRROutput`、RRGetOutputInfo)があった。最初の起動のときのもので、どのプロセスかは未確認。
 
+
+## 7.13 縦書きで英字を打つとテキストボックスが縦に伸びる(2026-11-22)
+
+- 症状:テキストツールで縦書きにして英字を打つと、テキストボックスが横幅 1 文字ほどのまま、縦に何千ピクセルも伸びる。
+  自動縦中横があるときは英字 3 文字目から、「なし」のときは 1 文字目から起きる。横書きと、日本語だけの縦書きは正常。
+  Hyprland と COSMIC の両方で起き、フォント(MS P ゴシックの置き換え先、Noto Sans CJK JP を直接指定)にもよらない。
+  日本語入力を外しても起きるので、fcitx5 とも関係ない。
+- 調べ方:`WINEDEBUG=+font` の記録で、英字を打った瞬間の呼び出しを見た(`+dwrite` は量が多すぎて使えない。
+  DirectWrite の縦書きの未実装部分は呼ばれていなかった)。CSP は横に倒す英字の形と寸法を、回転の行列(`MAT2`)を付けた
+  `GetGlyphOutline` で尋ねていた。Wine の返した寸法は、高さが約 334 万(`gm: 69, 3342285, …`)で、行列のかかった後の
+  座標が、元の値のちょうど 65535 倍になっていた。
+- 原因:`dlls/win32u/freetype.c` の `FT_FixedFromFIXED` が、`(int)f.value << 16 | (unsigned int)f.fract` と書かれている。
+  `int` と `unsigned int` の OR は `unsigned int` になり、64 ビットの Unix では 64 ビットの `FT_Fixed` にゼロ拡張される。
+  そのため -1.0(`value = -1, fract = 0`)が 65535.0 になる。回転の行列には -1 が入るので、横に倒した字だけが壊れる。
+  Wine の upstream(2026-11-22 時点の master)にも同じコードが残っている。
+- 対処:`wine/patches/unix/win32u-negative-glyph-transform.patch` で、`(FT_Fixed)f.value * 0x10000 + f.fract` にした。
+  縦書き(自動縦中横の有無)・日本語と英字の混在・横書きのどれも正常になった。

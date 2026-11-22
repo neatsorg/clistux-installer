@@ -1,0 +1,13 @@
+--- a/dlls/win32u/freetype.c
++++ b/dlls/win32u/freetype.c
+@@ -275,7 +275,9 @@
+ */
+ static inline FT_Fixed FT_FixedFromFIXED(FIXED f)
+ {
+-    return (FT_Fixed)((int)f.value << 16 | (unsigned int)f.fract);
++    /* f.value is signed: FT_Fixed is 64-bit on 64-bit Unix, so or'ing it as an unsigned int
++     * turned -1.0 into 65535.0 (e.g. rotated sideways glyphs in vertical text). */
++    return (FT_Fixed)f.value * 0x10000 + f.fract;
+ }
+ 
+ static BOOL is_hinting_enabled(void)

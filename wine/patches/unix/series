@@ -3,6 +3,7 @@ winex11-unmanaged-owned-popups.patch
 winex11-maximize-own-frame.patch
 win32u-clip-maximized-frame.patch
 win32u-linked-font-width.patch
+win32u-negative-glyph-transform.patch
 winex11-transient-for-managed-owner.patch
 winex11-moveresize-drag-threshold.patch
 winex11-recreate-unmanaged-on-hide.patch
