@@ -164,6 +164,19 @@ CLIP STUDIO PAINT(以下 CSP)を Linux の Wine で使うための環境を、1�
 - 起動用のスクリプトを1つ置き、環境変数をそこに集める。
 - `.desktop` ファイルを置き、アプリのメニューから起動できるようにする。`.clip` ファイルの関連付けも行う。
 - 起動前に、COSMIC と Hyprland が X11 に作業領域を知らせない問題への対処(作業領域ヘルパー)を実行する。
+  ほかのプログラムが設定した `_GTK_WORKAREAS_D0` は上書きしない(自分で設定した値は `_CLISTUX_WORKAREA` にも書いて見分ける)。
+  Hyprland では、`hyprctl monitors -j` の reserved を、XRandR のモニター(Wine が見る位置と大きさ)にモニター名で突き合わせて換算する。
+- デスクトップごとの対処(Wine のパッチを環境変数で有効にするもの)は、指定がなければ「自動」で、調べた結果に合わせて有効にする。
+  環境変数か `~/.config/clistux/launch.conf`(「名前=1」「名前=0」)で指定すると、それに従う。何を有効にしたかは起動の記録に書く。
+  | 名前 | 自動のとき | 内容 |
+  |---|---|---|
+  | `WINE_X11_RECREATE_UNMANAGED` | Hyprland で 1 | 隠した管理外の窓を作り直す(一度隠した窓を描かない対策) |
+  | `WINE_X11_DROP_SPURIOUS_CLICKS` | Hyprland で 1 | ペンの余分な「離す・押す」を捨てる |
+  | `WINE_X11_NET_WM_STATE_TIMEOUT` | Hyprland で 1000 | 最大化などの求めの返事を待つ時間(ミリ秒) |
+  | `WINE_X11_IGNORE_NET_WM_MOVERESIZE` | Hyprland で 1 | 窓の移動を window manager に任せず、Wine が動かす |
+  | `CLISTUX_WORKAREA` | 1 | 0 で作業領域ヘルパーを使わない |
+- 利用者の設定でしか直せないもの(Hyprland の窓の規則、ペンの割り当て先など)は、`clistux doctor` が設定と状態を調べて案内する。
+  Omarchy 向けの行は、OS の名前ではなく、Omarchy の `o.window` の仕組みがあるかで判断する。
 - 起動が遅い原因と対策は要調査(ファイルの先読み、wineserver の常駐など)。常駐を増やす対策は、効果を測ってから採る。
 
 ### 6. 日本語入力

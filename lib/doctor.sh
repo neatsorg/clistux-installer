@@ -36,6 +36,7 @@ doctor() {
     webview2_status || problems=$((problems + 1))
     check_ntsync
     check_input_method
+    check_hyprland
 
     # 取り残された Wine: CSP を閉じたのに Windows のプログラムが残っていると、次の起動が固まることがある
     if prefix_busy && ! pgrep -u "$(id -u)" -f 'CLIPStudio[A-Za-z]*\.exe' >/dev/null; then

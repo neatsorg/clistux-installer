@@ -8,6 +8,7 @@ install_launcher() {
     install -m 755 "$CLISTUX_ROOT/integration/launch.sh" "$BIN_DIR/csp-launch"
     install -m 755 "$CLISTUX_ROOT/integration/workarea/clistux-workarea.sh" "$BIN_DIR/clistux-workarea.sh"
     install -m 644 "$CLISTUX_ROOT/integration/workarea/clistux-workarea.py" "$BIN_DIR/clistux-workarea.py"
+    install -m 644 "$CLISTUX_ROOT/integration/workarea/clistux-workarea-hyprland.py" "$BIN_DIR/clistux-workarea-hyprland.py"
     ok "起動スクリプト: $BIN_DIR/csp-launch"
 }
 

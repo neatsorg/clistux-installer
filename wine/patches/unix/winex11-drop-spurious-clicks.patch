@@ -1,16 +1,25 @@
 --- a/dlls/winex11.drv/mouse.c
 +++ b/dlls/winex11.drv/mouse.c
-@@ -1556,6 +1556,26 @@
- /***********************************************************************
-  *           X11DRV_ButtonPress
-  */
+@@ -1553,6 +1553,45 @@
+ }
+ 
+ 
 +/* Some compositors (e.g. Hyprland) send an extra release and press, at the same time, while a pen is
 + * held down and the surface under it changes (for example when a menu opens under the pen). The extra
-+ * press reopens or closes the menu. Drop a press that comes with a release of the same button at the
-+ * same time and place, and the release that ends it. Enabled with WINE_X11_DROP_SPURIOUS_CLICKS=1. */
-+static int spurious_button = -1;
-+static Time last_release_time;
-+static int last_release_button = -1, last_release_x, last_release_y;
++ * press reopens or closes the menu. When WINE_X11_DROP_SPURIOUS_CLICKS=1 is set, drop a press that comes
++ * with a release of the same button within SPURIOUS_CLICK_TIME ms and SPURIOUS_CLICK_DIST pixels, and the
++ * release that ends it. A person can't release and press a button again that fast (a fast double click
++ * still takes tens of ms), so real clicks are kept. Wheel buttons have no release and are never dropped. */
++#define SPURIOUS_CLICK_TIME 15
++#define SPURIOUS_CLICK_DIST 4
++
++static struct
++{
++    BOOL dropped;   /* the last press was dropped, so drop the release that ends it */
++    BOOL released;  /* a release was seen */
++    Time time;      /* time of the last release */
++    int x, y;       /* root position of the last release */
++} last_button[NB_BUTTONS];
 +
 +static BOOL drop_spurious_clicks(void)
 +{
@@ -24,38 +33,48 @@
 +    return enabled;
 +}
 +
- BOOL X11DRV_ButtonPress( HWND hwnd, XEvent *xev )
- {
-     XButtonEvent *event = &xev->xbutton;
-@@ -1567,6 +1587,14 @@
++static BOOL is_spurious_press( const XButtonEvent *event, int button )
++{
++    if (!drop_spurious_clicks() || !last_button[button].released) return FALSE;
++    /* the press must not come before the release (Time wraps around, so compare as signed) */
++    if ((long)(event->time - last_button[button].time) < 0) return FALSE;
++    if (event->time - last_button[button].time > SPURIOUS_CLICK_TIME) return FALSE;
++    return abs( event->x_root - last_button[button].x ) <= SPURIOUS_CLICK_DIST &&
++           abs( event->y_root - last_button[button].y ) <= SPURIOUS_CLICK_DIST;
++}
++
+ /***********************************************************************
+  *           X11DRV_ButtonPress
+  */
+@@ -1567,6 +1606,14 @@
  
      TRACE( "hwnd %p/%lx button %u pos %d,%d\n", hwnd, event->window, buttonNum, event->x, event->y );
  
-+    if (drop_spurious_clicks() && buttonNum == last_release_button && event->time - last_release_time <= 15 &&
-+        abs( event->x_root - last_release_x ) <= 4 && abs( event->y_root - last_release_y ) <= 4)
++    last_button[buttonNum].dropped = is_spurious_press( event, buttonNum );
++    last_button[buttonNum].released = FALSE;
++    if (last_button[buttonNum].dropped)
 +    {
 +        TRACE( "dropping spurious press of button %u\n", buttonNum );
-+        spurious_button = buttonNum;
 +        return TRUE;
 +    }
 +
      input.mi.dx          = event->x;
      input.mi.dy          = event->y;
      input.mi.mouseData   = button_down_data[buttonNum];
-@@ -1599,6 +1627,17 @@
+@@ -1599,6 +1646,17 @@
  
      TRACE( "hwnd %p/%lx button %u pos %d,%d\n", hwnd, event->window, buttonNum, event->x, event->y );
  
-+    if (buttonNum == spurious_button)
++    if (last_button[buttonNum].dropped)
 +    {
 +        TRACE( "dropping release of the spurious press of button %u\n", buttonNum );
-+        spurious_button = -1;
++        last_button[buttonNum].dropped = FALSE;
 +        return TRUE;
 +    }
-+    last_release_button = buttonNum;
-+    last_release_time = event->time;
-+    last_release_x = event->x_root;
-+    last_release_y = event->y_root;
++    last_button[buttonNum].released = TRUE;
++    last_button[buttonNum].time = event->time;
++    last_button[buttonNum].x = event->x_root;
++    last_button[buttonNum].y = event->y_root;
 +
      input.mi.dx          = event->x;
      input.mi.dy          = event->y;

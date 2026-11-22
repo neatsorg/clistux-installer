@@ -43,20 +43,46 @@ if [[ -z "${XMODIFIERS:-}" ]]; then
     fi
 fi
 
-# Hyprland: 一度隠した管理外の X11 の窓(ツールチップ・メニュー・一部のダイアログ)を、もう一度表示しても描かない。
-# Wine に、隠したときに X11 の窓を作り直させる(winex11-recreate-unmanaged-on-hide.patch)。
-if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "${XDG_CURRENT_DESKTOP:-}" == *Hyprland* ]]; then
-    export WINE_X11_RECREATE_UNMANAGED="${WINE_X11_RECREATE_UNMANAGED:-1}"
-    # ペンを押している間に下の窓が変わると(メニューが開くなど)、同時刻の余分な「離す・押す」が届き、
-    # メニューが開いてすぐ閉じる。Wine に捨てさせる(winex11-drop-spurious-clicks.patch)
-    export WINE_X11_DROP_SPURIOUS_CLICKS="${WINE_X11_DROP_SPURIOUS_CLICKS:-1}"
-    # 最大化などの求めを、設定で黙って捨てることがある(Omarchy の suppress_event = "maximize")。
-    # 返事を待ち続けると窓を動かせなくなるので、1 秒で待つのをやめさせる(winex11-net-wm-state-timeout.patch)
-    export WINE_X11_NET_WM_STATE_TIMEOUT="${WINE_X11_NET_WM_STATE_TIMEOUT:-1000}"
-    # _NET_WM_MOVERESIZE に対応すると名乗るが、受け取っても何もしないので、タイトルバーで窓を動かせない。
-    # Wine の側で窓を動かさせる(winex11-ignore-net-wm-moveresize.patch)
-    export WINE_X11_IGNORE_NET_WM_MOVERESIZE="${WINE_X11_IGNORE_NET_WM_MOVERESIZE:-1}"
+# ---- デスクトップごとの対処 -------------------------------------------------------
+# 対処は、指定がなければ「自動」(調べた結果に合わせて有効にする)。環境変数か、設定ファイル
+# ~/.config/clistux/launch.conf に「名前=1」(有効)・「名前=0」(無効)と書けば、それに従う。
+# 何を有効にしたかは、起動の記録(launch.log)に書く。
+conf="${XDG_CONFIG_HOME:-$HOME/.config}/clistux/launch.conf"
+if [[ -f "$conf" ]]; then
+    while IFS='=' read -r key value; do
+        key="${key//[[:space:]]/}"; value="${value//[[:space:]]/}"
+        # 対処の名前だけを受け付ける(ほかの行・コメントは無視する)。環境変数の指定のほうを優先する
+        [[ "$key" =~ ^(WINE_X11_[A-Z_]+|CLISTUX_WORKAREA)$ && "$value" =~ ^[0-9]+$ ]] || continue
+        [[ -n "${!key:-}" ]] || export "$key=$value"
+    done < "$conf"
 fi
+
+desktop="${XDG_CURRENT_DESKTOP:-不明}"
+hyprland=0
+if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "${XDG_CURRENT_DESKTOP:-}" == *Hyprland* ]]; then
+    hyprland=1; desktop="Hyprland"
+fi
+
+measures=()
+# measure 名前 自動のときの値: 指定がなければ自動の値にして、由来とともに覚える
+measure() {
+    local var="$1" auto="$2" from=指定
+    if [[ -z "${!var:-}" ]]; then export "$var=$auto"; from=自動; fi
+    measures+=("$var=${!var}($from)")
+}
+auto_on() { ((hyprland)) && echo "$1" || echo 0; }
+# Hyprland: 一度隠した管理外の X11 の窓(ツールチップ・メニュー・一部のダイアログ)を、もう一度表示しても描かない。
+# Wine に、隠したときに X11 の窓を作り直させる(winex11-recreate-unmanaged-on-hide.patch)
+measure WINE_X11_RECREATE_UNMANAGED "$(auto_on 1)"
+# Hyprland: ペンを押している間に下の窓が変わると(メニューが開くなど)、同時刻の余分な「離す・押す」が届き、
+# メニューが開いてすぐ閉じる。Wine に捨てさせる(winex11-drop-spurious-clicks.patch)
+measure WINE_X11_DROP_SPURIOUS_CLICKS "$(auto_on 1)"
+# Hyprland: 最大化などの求めを、設定で黙って捨てることがある(Omarchy の suppress_event = "maximize")。
+# 返事を待ち続けると窓を動かせなくなるので、1 秒(ミリ秒で指定)で待つのをやめさせる(winex11-net-wm-state-timeout.patch)
+measure WINE_X11_NET_WM_STATE_TIMEOUT "$(auto_on 1000)"
+# Hyprland: _NET_WM_MOVERESIZE に対応すると名乗るが、受け取っても何もしないので、タイトルバーで窓を動かせない。
+# Wine の側で窓を動かさせる(winex11-ignore-net-wm-moveresize.patch)
+measure WINE_X11_IGNORE_NET_WM_MOVERESIZE "$(auto_on 1)"
 
 # COSMIC・Hyprland: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。
 "$HERE/clistux-workarea.sh" || true
@@ -70,6 +96,7 @@ fi
 # 落ちたとき、いつまでも画面が出ないときは、デスクトップの通知で次にすることを知らせる(PC に不慣れな人向け)。
 log="$STATE/launch.log"
 offset=$(stat -c %s "$log" 2>/dev/null || echo 0)
+echo "[$(date '+%F %T')] $title を起動: デスクトップ=$desktop 対処: ${measures[*]}" >> "$log"
 "$DATA/wine/bin/wine" "$exe" "${args[@]}" >> "$log" 2>&1 &
 pid=$!
 

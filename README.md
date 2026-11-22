@@ -117,7 +117,8 @@ TABMATE は 10 分操作しないとスリープ状態になります。CLIP STU
 - **日本語が入力できない**: fcitx5 か IBus が動いているかを確かめてください。動いていれば、CLIP STUDIO PAINT の起動時に自動で連携されます。
 - **ペンでタイトルバーを動かしたあと、ウィンドウをつかんだままになる**: Esc キーを押して解除してください(COSMIC で起きることがあります)。
 - **COSMIC で、起動時に画面が画面の外にはみ出す**: 現バージョンのCOSMIC は、フローティングウィンドウの表示位置を調整できません(CLIP STUDIO PAINT に限らない、COSMIC 自体の仕様です)。どうしてもはみ出さないようにしたい場合は拙作の [cosmic-geometry](https://github.com/neatsorg/cosmic-geometry) が役に立つことがあります。
-- **Hyprland(Omarchy など)で使う**: ツールチップ・メニュー・ダイアログ・ペンは動きますが、次の設定と使い方が必要です。
+- **Hyprland(Omarchy など)で使う**: ツールチップ・メニュー・ダイアログ・ペン・窓の移動は動きますが、次の設定が必要です。
+  端末で `clistux doctor` を実行すると、足りない設定を調べて表示します。
   - Omarchy の floating モードでは、窓が余計に広がって中身とずれ、クリックの位置もずれます。日本語入力(fcitx5)の候補の窓も、半透明の大きな窓になります。
     また、CLIP STUDIO PAINT のタイトルバーで窓を動かすと、Hyprland の移動のアニメーションで窓が揺れます。
     Hyprland の設定(`~/.config/hypr/hyprland.lua`)に次の2行を足してください。
@@ -129,6 +130,8 @@ TABMATE は 10 分操作しないとスリープ状態になります。CLIP STU
     例: `hl.config({ input = { tablet = { output = "DP-1" } } })`(画面の名前は `hyprctl monitors` で確かめられます)。
   - 窓の移動・最大化は、CLIP STUDIO PAINT 自身のタイトルバーとボタンで行えます。Hyprland のタイトルバーは、ペンではつかめません(マウスではつかめます)。
   - Omarchy の floating モードでは、メニューの項目が、マウスを乗せただけではハイライトされません(クリックすると選べます)。
+- **デスクトップごとの対処を止めたい・強制したい**: Hyprland などのための対処は、自動で有効になります(起動の記録 `~/.local/state/clistux/launch.log` に、何を有効にしたかが残ります)。
+  `~/.config/clistux/launch.conf` に「`WINE_X11_DROP_SPURIOUS_CLICKS=0`」のように書くと、対処ごとに止めたり(0)、強制したり(1)できます。名前の一覧は [docs/spec.md](docs/spec.md) の「5. 起動」にあります。
 - **画面が出ない・固まった**: 端末コマンド `clistux stop` で CLIP STUDIO PAINT と Wine を強制終了できます。その後もう一度起動してください。失われたデータがある場合でも保障はありませんので、自己責任でバックアップを欠かさないようにしてください。
 
 ## 削除する

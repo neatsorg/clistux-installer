@@ -54,7 +54,7 @@ if [[ -z "${CLISTUX_RELOCATED:-}" && "$CLISTUX_COMMAND" =~ ^(menu|install|update
 fi
 [[ -n "${CLISTUX_RELOCATED:-}" ]] && trap 'rm -rf "$CLISTUX_RELOCATED"' EXIT
 
-for f in common release check wine prefix csp webview2 desktop tabmate doctor migrate; do
+for f in common release check wine prefix csp webview2 desktop tabmate hyprland doctor migrate; do
     # shellcheck source=/dev/null
     . "$CLISTUX_ROOT/lib/$f.sh"
 done
