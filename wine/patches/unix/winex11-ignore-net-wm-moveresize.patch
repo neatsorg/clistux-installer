@@ -1,0 +1,38 @@
+--- a/dlls/winex11.drv/window.c
++++ b/dlls/winex11.drv/window.c
+@@ -3731,6 +3731,22 @@
+ }
+ 
+ 
++/* Some window managers (e.g. Hyprland) list _NET_WM_MOVERESIZE in _NET_SUPPORTED but never act on it,
++ * so a window can't be moved by its caption. When WINE_X11_IGNORE_NET_WM_MOVERESIZE=1 is set, don't
++ * hand moves and resizes over to the window manager; the Win32 side then moves the window itself with
++ * config requests, like it does when _NET_WM_MOVERESIZE isn't supported. */
++static BOOL net_wm_moveresize_ignored(void)
++{
++    static int ignored = -1;
++
++    if (ignored == -1)
++    {
++        const char *env = getenv( "WINE_X11_IGNORE_NET_WM_MOVERESIZE" );
++        ignored = env && atoi( env );
++    }
++    return ignored;
++}
++
+ /***********************************************************************
+  *           SysCommand   (X11DRV.@)
+  *
+@@ -3796,6 +3812,12 @@
+         goto failed;
+     }
+ 
++    if (net_wm_moveresize_ignored())
++    {
++        TRACE( "_NET_WM_MOVERESIZE ignored by the window manager, moving/sizing from the Win32 side\n" );
++        goto failed;
++    }
++
+     release_win_data( data );
+     move_resize_window( hwnd, dir, *pos );
+     return 0;

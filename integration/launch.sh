@@ -53,6 +53,9 @@ if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" || "${XDG_CURRENT_DESKTOP:-}" == *Hy
     # 最大化などの求めを、設定で黙って捨てることがある(Omarchy の suppress_event = "maximize")。
     # 返事を待ち続けると窓を動かせなくなるので、1 秒で待つのをやめさせる(winex11-net-wm-state-timeout.patch)
     export WINE_X11_NET_WM_STATE_TIMEOUT="${WINE_X11_NET_WM_STATE_TIMEOUT:-1000}"
+    # _NET_WM_MOVERESIZE に対応すると名乗るが、受け取っても何もしないので、タイトルバーで窓を動かせない。
+    # Wine の側で窓を動かさせる(winex11-ignore-net-wm-moveresize.patch)
+    export WINE_X11_IGNORE_NET_WM_MOVERESIZE="${WINE_X11_IGNORE_NET_WM_MOVERESIZE:-1}"
 fi
 
 # COSMIC・Hyprland: 作業領域(パネルを除いた範囲)を X11 に知らせる。最大化した CSP がパネルに重ならないように。

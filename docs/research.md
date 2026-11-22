@@ -367,3 +367,17 @@ WebView2 は 158 が入った(wv2check は通った)。
   Wine の upstream(2026-11-22 時点の master)にも同じコードが残っている。
 - 対処:`wine/patches/unix/win32u-negative-glyph-transform.patch` で、`(FT_Fixed)f.value * 0x10000 + f.fract` にした。
   縦書き(自動縦中横の有無)・日本語と英字の混在・横書きのどれも正常になった。
+
+## 7.14 Hyprland: CSP のタイトルバーで窓を動かせない(2026-11-22)
+
+- 症状:CSP 自前のタイトルバーをドラッグしても窓が動かない(ダブルクリックの最大化は動く)。
+- 原因:Wine はタイトルバーのドラッグを `_NET_WM_MOVERESIZE` で window manager に任せる。Hyprland(0.56、main も同じ)の
+  XWayland の window manager(`src/xwayland/XWM.cpp`)は、`_NET_SUPPORTED` に `_NET_WM_MOVERESIZE` を載せているのに、
+  そのクライアントメッセージを処理するコードがなく、黙って捨てる。
+- 対処:`winex11-ignore-net-wm-moveresize.patch`。`WINE_X11_IGNORE_NET_WM_MOVERESIZE=1` のとき、window manager に任せず、
+  `_NET_WM_MOVERESIZE` に対応していないときと同じく、Win32 の側で位置・大きさの変更を求めて動かす。起動スクリプトは Hyprland のときに設定する。
+  移動・大きさの変更・ダブルクリックでの最大化と復元が、マウスとペンの両方で動いた。
+- 移動中に窓が揺れる:Hyprland は、アプリが求めた位置への移動もアニメーションで見せるので、ドラッグ中の細かい移動に
+  アニメーションが遅れて追いつき、磁石のように揺れる。アニメーションを止めると消えた。窓の規則の `no_anim` で、
+  CSP の窓だけ止める(Omarchy では `o.window(".*\\.exe", { float = true, no_anim = true })`)。
+- Hyprland 自前のタイトルバー(hyprbars)は、ペンではつかめない(マウスではつかめる)。Hyprland の側の扱いで、Wine では直せない。

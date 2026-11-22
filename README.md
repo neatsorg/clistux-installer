@@ -118,12 +118,16 @@ TABMATE は 10 分操作しないとスリープ状態になります。CLIP STU
 - **ペンでタイトルバーを動かしたあと、ウィンドウをつかんだままになる**: Esc キーを押して解除してください(COSMIC で起きることがあります)。
 - **COSMIC で、起動時に画面が画面の外にはみ出す**: 現バージョンのCOSMIC は、フローティングウィンドウの表示位置を調整できません(CLIP STUDIO PAINT に限らない、COSMIC 自体の仕様です)。どうしてもはみ出さないようにしたい場合は拙作の [cosmic-geometry](https://github.com/neatsorg/cosmic-geometry) が役に立つことがあります。
 - **Hyprland(Omarchy など)で使う**: ツールチップ・メニュー・ダイアログ・ペンは動きますが、次の設定と使い方が必要です。
-  - Omarchy の floating モードでは、窓が余計に広がって中身とずれ、クリックの位置もずれます。
-    Hyprland の設定(`~/.config/hypr/hyprland.lua`)に `o.window(".*\\.exe", { float = true })` を足してください。
+  - Omarchy の floating モードでは、窓が余計に広がって中身とずれ、クリックの位置もずれます。日本語入力(fcitx5)の候補の窓も、半透明の大きな窓になります。
+    また、CLIP STUDIO PAINT のタイトルバーで窓を動かすと、Hyprland の移動のアニメーションで窓が揺れます。
+    Hyprland の設定(`~/.config/hypr/hyprland.lua`)に次の2行を足してください。
+    ```lua
+    o.window(".*\\.exe", { float = true, no_anim = true })
+    o.window("fcitx.*", { float = true })
+    ```
   - 液晶タブレットのペンの位置が大きくずれるときは、ペンをその画面だけに割り当ててください。
     例: `hl.config({ input = { tablet = { output = "DP-1" } } })`(画面の名前は `hyprctl monitors` で確かめられます)。
-  - 窓の移動と最大化は、Hyprland の側(Hyprland のタイトルバー、または Super+F など)で行ってください。
-    CLIP STUDIO PAINT 自身の最大化ボタンやタイトルバーのダブルクリックは、Omarchy では窓の中ではみ出したり、窓を動かせなくなったりします。
+  - 窓の移動・最大化は、CLIP STUDIO PAINT 自身のタイトルバーとボタンで行えます。Hyprland のタイトルバーは、ペンではつかめません(マウスではつかめます)。
   - Omarchy の floating モードでは、メニューの項目が、マウスを乗せただけではハイライトされません(クリックすると選べます)。
 - **画面が出ない・固まった**: 端末コマンド `clistux stop` で CLIP STUDIO PAINT と Wine を強制終了できます。その後もう一度起動してください。失われたデータがある場合でも保障はありませんので、自己責任でバックアップを欠かさないようにしてください。
 
