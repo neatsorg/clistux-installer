@@ -1,6 +1,14 @@
 --- a/dlls/winex11.drv/x11drv.h
 +++ b/dlls/winex11.drv/x11drv.h
-@@ -689,6 +689,8 @@
+@@ -304,6 +304,7 @@
+  */
+ 
+ extern Display *gdi_display;  /* display to use for all GDI functions */
++extern void check_net_wm_state_timeouts(void);
+ 
+ /* X11 GDI palette driver */
+ 
+@@ -689,6 +690,8 @@
      struct window_state current_state; /* window state tracking the current X11 state */
      unsigned long wm_state_serial;     /* serial of last pending WM_STATE request */
      unsigned long net_wm_state_serial; /* serial of last pending _NET_WM_STATE request */
@@ -11,7 +19,15 @@
      unsigned long wm_normal_hints_serial;/* serial of last pending WM_NORMAL_HINTS request */
 --- a/dlls/winex11.drv/window.c
 +++ b/dlls/winex11.drv/window.c
-@@ -1375,11 +1375,58 @@
+@@ -30,6 +30,7 @@
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <unistd.h>
++#include <time.h>
+ 
+ #include <X11/Xlib.h>
+ #include <X11/Xresource.h>
+@@ -1375,11 +1376,159 @@
      window_set_net_wm_fullscreen_monitors( data, &monitors );
  }
  
@@ -58,6 +74,107 @@
 +    window_request_desired_state( data );
 +}
 +
++/* The check above only runs when something happens to the window. If nothing does after the window
++ * manager ignored a request, the window would keep waiting (e.g. stay small after an ignored maximize
++ * at startup). Remember the waiting windows, and wake every thread up once the timeout has expired:
++ * each thread selects PropertyChangeMask on the root window, and checks its own windows in
++ * X11DRV_ProcessEvents. The wake-up is sent on gdi_display to the root window, which always exists. */
++static HWND net_wm_state_waiting[32];
++static LONG net_wm_state_waiting_count;
++static pthread_mutex_t net_wm_state_mutex = PTHREAD_MUTEX_INITIALIZER;
++
++static void *net_wm_state_wake_thread( void *arg )
++{
++    DWORD delay = (DWORD)(UINT_PTR)arg;
++    struct timespec ts = { delay / 1000, (delay % 1000) * 1000000 };
++    XEvent event;
++
++    nanosleep( &ts, NULL );
++    memset( &event, 0, sizeof(event) );
++    event.xproperty.type = PropertyNotify;
++    event.xproperty.window = DefaultRootWindow( gdi_display );
++    event.xproperty.atom = XInternAtom( gdi_display, "_WINE_NET_WM_STATE_TIMEOUT", False );
++    event.xproperty.state = PropertyNewValue;
++    XSendEvent( gdi_display, DefaultRootWindow( gdi_display ), False, PropertyChangeMask, &event );
++    XFlush( gdi_display );
++    return NULL;
++}
++
++static void wait_for_net_wm_state_answer( struct x11drv_win_data *data )
++{
++    DWORD timeout = net_wm_state_timeout();
++    pthread_attr_t attr;
++    pthread_t thread;
++    UINT i, slot = ARRAY_SIZE(net_wm_state_waiting);
++
++    data->net_wm_state_time = NtGetTickCount();
++    if (!timeout) return;
++
++    pthread_mutex_lock( &net_wm_state_mutex );
++    for (i = 0; i < ARRAY_SIZE(net_wm_state_waiting); i++)
++    {
++        if (net_wm_state_waiting[i] == data->hwnd) break;
++        if (!net_wm_state_waiting[i] && slot == ARRAY_SIZE(net_wm_state_waiting)) slot = i;
++    }
++    if (i == ARRAY_SIZE(net_wm_state_waiting) && slot < ARRAY_SIZE(net_wm_state_waiting))
++    {
++        net_wm_state_waiting[slot] = data->hwnd;
++        net_wm_state_waiting_count++;
++    }
++    pthread_mutex_unlock( &net_wm_state_mutex );
++
++    pthread_attr_init( &attr );
++    pthread_attr_setdetachstate( &attr, PTHREAD_CREATE_DETACHED );
++    if (pthread_create( &thread, &attr, net_wm_state_wake_thread, (void *)(UINT_PTR)(timeout + 50) ))
++        WARN( "failed to start the _NET_WM_STATE timeout thread\n" );
++    pthread_attr_destroy( &attr );
++}
++
++static void forget_net_wm_state_window( HWND hwnd )
++{
++    UINT i;
++
++    pthread_mutex_lock( &net_wm_state_mutex );
++    for (i = 0; i < ARRAY_SIZE(net_wm_state_waiting); i++)
++    {
++        if (net_wm_state_waiting[i] != hwnd) continue;
++        net_wm_state_waiting[i] = 0;
++        net_wm_state_waiting_count--;
++    }
++    pthread_mutex_unlock( &net_wm_state_mutex );
++}
++
++/* called from X11DRV_ProcessEvents: give up on the requests of this thread's windows that timed out */
++void check_net_wm_state_timeouts(void)
++{
++    HWND hwnds[ARRAY_SIZE(net_wm_state_waiting)], gone[ARRAY_SIZE(net_wm_state_waiting)];
++    struct x11drv_win_data *data;
++    DWORD tid = GetCurrentThreadId(), owner;
++    UINT i, count = 0, gone_count = 0;
++
++    if (!net_wm_state_waiting_count) return;
++
++    pthread_mutex_lock( &net_wm_state_mutex );
++    for (i = 0; i < ARRAY_SIZE(net_wm_state_waiting); i++)
++        if (net_wm_state_waiting[i]) hwnds[count++] = net_wm_state_waiting[i];
++    pthread_mutex_unlock( &net_wm_state_mutex );
++
++    for (i = 0; i < count; i++)
++    {
++        owner = NtUserGetWindowThread( hwnds[i], NULL );
++        if (!owner) gone[gone_count++] = hwnds[i];  /* the window is gone */
++        if (owner != tid) continue;
++        if ((data = get_win_data( hwnds[i] )))
++        {
++            check_net_wm_state_answer( data );
++            if (!data->net_wm_state_serial) gone[gone_count++] = hwnds[i];
++            release_win_data( data );
++        }
++        else gone[gone_count++] = hwnds[i];
++    }
++    for (i = 0; i < gone_count; i++) forget_net_wm_state_window( gone[i] );
++}
++
  static void window_set_net_wm_state( struct x11drv_win_data *data, UINT new_state )
  {
 -    UINT i, count, old_state = data->pending_state.net_wm_state;
@@ -71,23 +188,23 @@
      data->desired_state.net_wm_state = new_state;
      if (!data->whole_window || !data->managed || data->embedded) return; /* no window or not managed, nothing to update */
      if (data->wm_state_serial) return; /* another WM_STATE update is pending, wait for it to complete */
-@@ -1407,6 +1454,7 @@
+@@ -1407,6 +1556,7 @@
  
          data->pending_state.net_wm_state = new_state;
          data->net_wm_state_serial = NextRequest( data->display );
-+        data->net_wm_state_time = NtGetTickCount();
++        wait_for_net_wm_state_answer( data );
          TRACE( "window %p/%lx, requesting _NET_WM_STATE %#x serial %lu\n", data->hwnd, data->whole_window,
                 data->pending_state.net_wm_state, data->net_wm_state_serial );
          XChangeProperty( data->display, data->whole_window, x11drv_atom(_NET_WM_STATE), XA_ATOM,
-@@ -1438,6 +1486,7 @@
+@@ -1438,6 +1588,7 @@
  
              data->pending_state.net_wm_state ^= (1 << i);
              data->net_wm_state_serial = NextRequest( data->display );
-+            data->net_wm_state_time = NtGetTickCount();
++            wait_for_net_wm_state_answer( data );
              TRACE( "window %p/%lx, requesting _NET_WM_STATE %#x serial %lu\n", data->hwnd, data->whole_window,
                     data->pending_state.net_wm_state, data->net_wm_state_serial );
              XSendEvent( data->display, DefaultRootWindow( data->display ), False,
-@@ -1454,8 +1503,9 @@
+@@ -1454,8 +1605,9 @@
      XWindowChanges changes;
      RECT *new_rect = &rect;
  
@@ -99,7 +216,7 @@
      {
          new_rect->right = new_rect->left + old_rect->right - old_rect->left;
          new_rect->bottom = new_rect->top + old_rect->bottom - old_rect->top;
-@@ -1725,6 +1775,7 @@
+@@ -1725,6 +1877,7 @@
      if (!data->managed) return 0; /* unmanaged windows are managed by the Win32 side */
      if (data->desired_state.wm_state == WithdrawnState) return 0; /* ignore state changes on invisible windows */
  
@@ -107,7 +224,7 @@
      if (data->wm_state_serial) return 0; /* another WM_STATE update is pending, wait for it to complete */
      if (data->net_wm_state_serial) return 0; /* another _NET_WM_STATE update is pending, wait for it to complete */
      if (data->mwm_hints_serial) return 0; /* another MWM_HINT update is pending, wait for it to complete */
-@@ -1734,6 +1785,8 @@
+@@ -1734,6 +1887,8 @@
      if (data->current_state.wm_state != WithdrawnState) new_style |= WS_VISIBLE;
      if (data->current_state.wm_state == IconicState) new_style |= WS_MINIMIZE;
      if (data->current_state.net_wm_state & (1 << NET_WM_STATE_MAXIMIZED)) new_style |= WS_MAXIMIZE;
@@ -116,3 +233,13 @@
  
      if ((old_style & WS_MINIMIZE) && !(new_style & WS_MINIMIZE))
      {
+--- a/dlls/winex11.drv/event.c
++++ b/dlls/winex11.drv/event.c
+@@ -482,6 +482,7 @@
+ 
+     if (!data) return FALSE;
+     if (data->current_event) mask = 0;  /* don't process nested events */
++    else check_net_wm_state_timeouts();
+ 
+     prev_event.type = 0;
+     for (;;)
